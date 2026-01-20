@@ -7,6 +7,7 @@ import (
 	"github.com/jesseduffield/gocui"
 
 	"github.com/abdullathedruid/cmux/internal/ui"
+	"github.com/abdullathedruid/cmux/internal/version"
 )
 
 const statusBarViewName = "statusbar"
@@ -62,7 +63,7 @@ func (c *StatusBarController) Render(g *gocui.Gui) error {
 	activeCount := c.ctx.State.ActiveCount()
 	isDashboard := c.ctx.State.IsDashboardView()
 
-	content := ui.RenderStatusBar(sessionCount, attachedCount, activeCount, isDashboard)
+	content := ui.RenderStatusBar(sessionCount, attachedCount, activeCount, isDashboard, version.Short())
 	fmt.Fprint(v, " "+content)
 
 	return nil
