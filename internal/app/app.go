@@ -32,6 +32,7 @@ type App struct {
 	statusBar *controller.StatusBarController
 	help      *controller.HelpController
 	worktree  *controller.WorktreeController
+	editor    *controller.EditorController
 
 	// State
 	suspended bool
@@ -78,6 +79,7 @@ func New(cfg *config.Config) (*App, error) {
 	app.statusBar = controller.NewStatusBarController(ctx)
 	app.help = controller.NewHelpController(ctx)
 	app.worktree = controller.NewWorktreeController(ctx)
+	app.editor = controller.NewEditorController(ctx, app.saveNote)
 
 	return app, nil
 }
@@ -162,6 +164,13 @@ func (a *App) layout(g *gocui.Gui) error {
 		}
 	}
 
+	// Editor overlay (if visible)
+	if a.editor.IsVisible() {
+		if err := a.editor.Layout(g); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -204,6 +213,11 @@ func (a *App) setupKeybindings() error {
 		return err
 	}
 
+	// Note editor
+	if err := a.gui.SetKeybinding("", 'e', gocui.ModNone, a.editNoteHandler); err != nil {
+		return err
+	}
+
 	// Set up controller-specific keybindings
 	if err := a.dashboard.Keybindings(a.gui); err != nil {
 		return err
@@ -215,6 +229,9 @@ func (a *App) setupKeybindings() error {
 		return err
 	}
 	if err := a.worktree.Keybindings(a.gui); err != nil {
+		return err
+	}
+	if err := a.editor.Keybindings(a.gui); err != nil {
 		return err
 	}
 
@@ -239,6 +256,14 @@ func (a *App) helpHandler(g *gocui.Gui, v *gocui.View) error {
 
 func (a *App) worktreeHandler(g *gocui.Gui, v *gocui.View) error {
 	return a.worktree.Show(g)
+}
+
+func (a *App) editNoteHandler(g *gocui.Gui, v *gocui.View) error {
+	sess := a.state.GetSelectedSession()
+	if sess == nil {
+		return nil
+	}
+	return a.editor.Show(g, sess.Name, sess.Note)
 }
 
 // Actions
@@ -383,7 +408,19 @@ func (a *App) deleteSession(name string) error {
 	if err := a.tmux.KillSession(name); err != nil {
 		return err
 	}
+	// Also delete the note
+	a.notes.Delete(name)
 	return a.refresh()
+}
+
+func (a *App) saveNote(sessionName, content string) error {
+	// Save to notes store
+	if err := a.notes.Set(sessionName, content); err != nil {
+		return err
+	}
+	// Update state
+	a.state.UpdateNote(sessionName, content)
+	return nil
 }
 
 func (a *App) backgroundRefresh() {

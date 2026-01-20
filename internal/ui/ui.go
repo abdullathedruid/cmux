@@ -226,7 +226,7 @@ Session Management
   N                  New session wizard
   w                  Worktree picker
   d                  Delete selected session
-  e                  Edit session note
+  e                  Edit session note (Ctrl+S to save)
   r                  Refresh session list
 
 Views
