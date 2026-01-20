@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -82,6 +83,13 @@ const (
 	compactCardHeight = 3 // title, status+last active, bottom border
 )
 
+// Layout constants for padding
+const (
+	leftPadding  = 4 // Left margin for cards
+	rightPadding = 4 // Right margin for cards
+	cardGap      = 3 // Gap between cards
+)
+
 // Render renders the dashboard content.
 func (c *DashboardController) Render(g *gocui.Gui) error {
 	v, err := g.View(dashboardViewName)
@@ -96,32 +104,45 @@ func (c *DashboardController) Render(g *gocui.Gui) error {
 
 	if len(repos) == 0 {
 		fmt.Fprintln(v, "")
-		fmt.Fprintln(v, "  No sessions found.")
+		fmt.Fprintln(v, "    No sessions found.")
 		fmt.Fprintln(v, "")
-		fmt.Fprintln(v, "  Press 'n' to create a new session.")
+		fmt.Fprintln(v, "    Press 'n' to create a new session.")
 		return nil
 	}
 
 	// Get view dimensions for card sizing
 	width, height := v.Size()
 	cardWidth := 35 // Default card width
-	cardsPerRow := max((width-4)/cardWidth, 1)
+	// Available width = total - left padding - right padding
+	availableWidth := width - leftPadding - rightPadding
+	// Account for gaps between cards: cardsPerRow cards need (cardsPerRow-1) gaps
+	cardsPerRow := max((availableWidth+cardGap)/(cardWidth+cardGap), 1)
 	if cardsPerRow > 3 {
 		cardsPerRow = 3 // Max 3 cards per row
 	}
-	// Account for: 2-space left margin + 2-space gaps between cards
-	// Total margin = 2 + 2*(cardsPerRow-1) = 2*cardsPerRow
-	cardWidth = (width - 2*cardsPerRow) / cardsPerRow
+	// Calculate actual card width to use available space evenly
+	cardWidth = (availableWidth - cardGap*(cardsPerRow-1)) / cardsPerRow
 
 	// Determine card size based on available vertical space
 	cardSize := c.calculateCardSize(repos, cardsPerRow, height)
 
+	// Track lines used for recent activity section
+	linesUsed := 0
+
 	for _, repo := range repos {
 		// Repository header
-		fmt.Fprintf(v, "\n  %s\n", repo.Name)
+		fmt.Fprintf(v, "\n%s%s\n", strings.Repeat(" ", leftPadding), repo.Name)
+		linesUsed += 2
 
 		// Render sessions as cards in a grid
-		c.renderCards(v, repo.Sessions, cardWidth, cardsPerRow, selectedName, cardSize)
+		cardLines := c.renderCards(v, repo.Sessions, cardWidth, cardsPerRow, selectedName, cardSize)
+		linesUsed += cardLines
+	}
+
+	// Render recent activity in remaining space
+	remainingHeight := height - linesUsed - 4 // Leave buffer for borders
+	if remainingHeight > 3 {
+		c.renderRecentActivity(v, width, remainingHeight)
 	}
 
 	return nil
@@ -152,11 +173,13 @@ func (c *DashboardController) calculateCardSize(repos []*state.Repository, cards
 	return ui.CardSizeCompact
 }
 
-// renderCards renders session cards in a grid.
-func (c *DashboardController) renderCards(v *gocui.View, sessions []*state.Session, cardWidth, cardsPerRow int, selectedName string, cardSize ui.CardSize) {
+// renderCards renders session cards in a grid and returns the number of lines printed.
+func (c *DashboardController) renderCards(v *gocui.View, sessions []*state.Session, cardWidth, cardsPerRow int, selectedName string, cardSize ui.CardSize) int {
 	if len(sessions) == 0 {
-		return
+		return 0
 	}
+
+	totalLines := 0
 
 	// Build cards
 	cards := make([]*ui.Card, len(sessions))
@@ -185,7 +208,7 @@ func (c *DashboardController) renderCards(v *gocui.View, sessions []*state.Sessi
 		// Print each line of the row
 		for lineIdx := 0; lineIdx < maxLines; lineIdx++ {
 			var line strings.Builder
-			line.WriteString("  ")
+			line.WriteString(strings.Repeat(" ", leftPadding))
 			for cardIdx, cl := range cardLines {
 				if lineIdx < len(cl) {
 					line.WriteString(cl[lineIdx])
@@ -193,12 +216,92 @@ func (c *DashboardController) renderCards(v *gocui.View, sessions []*state.Sessi
 					line.WriteString(strings.Repeat(" ", cardWidth))
 				}
 				if cardIdx < len(cardLines)-1 {
-					line.WriteString("  ")
+					line.WriteString(strings.Repeat(" ", cardGap))
 				}
 			}
 			fmt.Fprintln(v, line.String())
+			totalLines++
 		}
 		fmt.Fprintln(v, "")
+		totalLines++
+	}
+
+	return totalLines
+}
+
+// activityEntry represents a tool activity with session context.
+type activityEntry struct {
+	SessionName string
+	Tool        string
+	Timestamp   time.Time
+}
+
+// renderRecentActivity renders a global recent activity section.
+func (c *DashboardController) renderRecentActivity(v *gocui.View, width, maxLines int) {
+	// Collect all tool history entries from all sessions
+	var activities []activityEntry
+	for _, sess := range c.ctx.State.GetSessions() {
+		for _, entry := range sess.ToolHistory {
+			activities = append(activities, activityEntry{
+				SessionName: sess.Name,
+				Tool:        entry.Tool,
+				Timestamp:   entry.Timestamp,
+			})
+		}
+	}
+
+	if len(activities) == 0 {
+		return
+	}
+
+	// Sort by timestamp, newest first
+	sort.Slice(activities, func(i, j int) bool {
+		return activities[i].Timestamp.After(activities[j].Timestamp)
+	})
+
+	// Header
+	fmt.Fprintln(v, "")
+	fmt.Fprintf(v, "%s%s─ Recent Activity %s\n",
+		strings.Repeat(" ", leftPadding),
+		ui.ColorDim,
+		strings.Repeat("─", max(0, width-leftPadding-rightPadding-18))+ui.ColorReset)
+
+	// Calculate available lines for activity (subtract header lines)
+	availableLines := maxLines - 3
+
+	// Find the longest session name to size the column appropriately
+	maxNameLen := 0
+	for i := 0; i < len(activities) && i < availableLines; i++ {
+		nameLen := len(activities[i].SessionName)
+		if nameLen > maxNameLen {
+			maxNameLen = nameLen
+		}
+	}
+	// Clamp session name width: min 10, max 30 chars
+	sessionWidth := maxNameLen
+	if sessionWidth < 10 {
+		sessionWidth = 10
+	}
+	if sessionWidth > 30 {
+		sessionWidth = 30
+	}
+
+	// Render activities
+	// Layout: leftPadding + timestamp(8) + gap(2) + session(sessionWidth) + gap(2) + tool(remaining)
+	contentWidth := width - leftPadding - rightPadding
+	toolWidth := contentWidth - 8 - 2 - sessionWidth - 2
+	if toolWidth < 10 {
+		toolWidth = 10
+	}
+
+	for i := 0; i < len(activities) && i < availableLines; i++ {
+		act := activities[i]
+		ts := act.Timestamp.Local().Format("15:04:05")
+		sessionDisplay := ui.PadRight(act.SessionName, sessionWidth)
+		toolDisplay := ui.Truncate(act.Tool, toolWidth)
+		line := fmt.Sprintf("%s%s  %s%s%s  %s",
+			ui.ColorDim, ts, ui.ColorCyan, sessionDisplay, ui.ColorReset, toolDisplay)
+		fmt.Fprintf(v, "%s%s\n", strings.Repeat(" ", leftPadding), line)
 	}
 }
 
