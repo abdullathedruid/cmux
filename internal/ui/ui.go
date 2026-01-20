@@ -77,6 +77,14 @@ func StatusText(attached bool, status state.SessionStatus) string {
 	}
 }
 
+// CardSize represents the size mode for rendering cards.
+type CardSize int
+
+const (
+	CardSizeLarge   CardSize = iota // Full card with all details
+	CardSizeCompact                 // Minimal card with essential info
+)
+
 // Card renders a session card for the dashboard view.
 type Card struct {
 	Title       string
@@ -89,11 +97,20 @@ type Card struct {
 	ToolHistory []string // Recent tool summaries
 	Width       int
 	Selected    bool
-	BorderColor string // ANSI color code for the border based on status
+	BorderColor string   // ANSI color code for the border based on status
+	Size        CardSize // Card size mode (Large or Compact)
 }
 
 // Render renders the card as a string slice (one per line).
 func (c *Card) Render() []string {
+	if c.Size == CardSizeCompact {
+		return c.renderCompact()
+	}
+	return c.renderLarge()
+}
+
+// renderLarge renders the full-size card with all details.
+func (c *Card) renderLarge() []string {
 	width := c.Width
 	if width < 20 {
 		width = 30
@@ -102,7 +119,7 @@ func (c *Card) Render() []string {
 	// Calculate inner width (accounting for borders and padding)
 	innerWidth := width - 4 // 2 for borders, 2 for padding
 
-	lines := make([]string, 0, 7)
+	lines := make([]string, 0, 9)
 
 	// Get border color (default to no color if not set)
 	borderColor := c.BorderColor
@@ -137,11 +154,13 @@ func (c *Card) Render() []string {
 		lines = append(lines, c.borderLine("", innerWidth))
 	}
 
-	// Tool history line (show last 2-3 tools compactly)
-	if len(c.ToolHistory) > 0 {
-		toolLine := strings.Join(c.ToolHistory, " → ")
-		lines = append(lines, c.borderLine(truncate(toolLine, innerWidth), innerWidth))
-	} else {
+	// Tool history lines (show up to 5 tools, one per line for large cards)
+	toolCount := min(len(c.ToolHistory), 5)
+	for i := 0; i < toolCount; i++ {
+		lines = append(lines, c.borderLine(truncate(c.ToolHistory[i], innerWidth), innerWidth))
+	}
+	// Pad with empty lines if fewer than 5 tools
+	for i := toolCount; i < 5; i++ {
 		lines = append(lines, c.borderLine("", innerWidth))
 	}
 
@@ -153,6 +172,58 @@ func (c *Card) Render() []string {
 		contextLine = "› " + c.LastPrompt
 	}
 	lines = append(lines, c.borderLine(Truncate(contextLine, innerWidth), innerWidth))
+
+	// Bottom border
+	bottomCorner := "└"
+	bottomEndCorner := "┘"
+	if c.Selected {
+		bottomCorner = "┗"
+		bottomEndCorner = "┛"
+		borderChar = "━"
+	}
+	bottomBorder := bottomCorner + strings.Repeat(borderChar, width-2) + bottomEndCorner
+	lines = append(lines, borderColor+bottomBorder+colorReset)
+
+	return lines
+}
+
+// renderCompact renders a minimal card with just essential info.
+func (c *Card) renderCompact() []string {
+	width := c.Width
+	if width < 20 {
+		width = 30
+	}
+
+	// Calculate inner width (accounting for borders and padding)
+	innerWidth := width - 4 // 2 for borders, 2 for padding
+
+	lines := make([]string, 0, 3)
+
+	// Get border color (default to no color if not set)
+	borderColor := c.BorderColor
+	colorReset := ""
+	if borderColor != "" {
+		colorReset = ColorReset
+	}
+
+	// Top border
+	borderChar := "─"
+	corner := "┌"
+	endCorner := "┐"
+	if c.Selected {
+		corner = "┏"
+		endCorner = "┓"
+		borderChar = "━"
+	}
+	topBorder := corner + c.Title + " " + strings.Repeat(borderChar, max(0, width-runewidth.StringWidth(c.Title)-3)) + endCorner
+	lines = append(lines, borderColor+topBorder+colorReset)
+
+	// Combined status + last active line
+	statusLine := fmt.Sprintf("%s %s", c.Icon, c.Status)
+	if c.LastActive != "" {
+		statusLine = fmt.Sprintf("%s %s  %s", c.Icon, c.Status, c.LastActive)
+	}
+	lines = append(lines, c.borderLine(truncate(statusLine, innerWidth), innerWidth))
 
 	// Bottom border
 	bottomCorner := "└"

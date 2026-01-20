@@ -76,6 +76,12 @@ func (c *DashboardController) Keybindings(g *gocui.Gui) error {
 	return nil
 }
 
+// Card height constants
+const (
+	largeCardHeight   = 9 // title, status, last active, 5 tools, context, bottom border
+	compactCardHeight = 3 // title, status+last active, bottom border
+)
+
 // Render renders the dashboard content.
 func (c *DashboardController) Render(g *gocui.Gui) error {
 	v, err := g.View(dashboardViewName)
@@ -97,7 +103,7 @@ func (c *DashboardController) Render(g *gocui.Gui) error {
 	}
 
 	// Get view dimensions for card sizing
-	width, _ := v.Size()
+	width, height := v.Size()
 	cardWidth := 35 // Default card width
 	cardsPerRow := max((width-4)/cardWidth, 1)
 	if cardsPerRow > 3 {
@@ -107,19 +113,47 @@ func (c *DashboardController) Render(g *gocui.Gui) error {
 	// Total margin = 2 + 2*(cardsPerRow-1) = 2*cardsPerRow
 	cardWidth = (width - 2*cardsPerRow) / cardsPerRow
 
+	// Determine card size based on available vertical space
+	cardSize := c.calculateCardSize(repos, cardsPerRow, height)
+
 	for _, repo := range repos {
 		// Repository header
 		fmt.Fprintf(v, "\n  %s\n", repo.Name)
 
 		// Render sessions as cards in a grid
-		c.renderCards(v, repo.Sessions, cardWidth, cardsPerRow, selectedName)
+		c.renderCards(v, repo.Sessions, cardWidth, cardsPerRow, selectedName, cardSize)
 	}
 
 	return nil
 }
 
+// calculateCardSize determines whether to use large or compact cards based on terminal height.
+func (c *DashboardController) calculateCardSize(repos []*state.Repository, cardsPerRow, availableHeight int) ui.CardSize {
+	// Calculate total rows and height needed for large cards
+	totalRows := 0
+	for _, repo := range repos {
+		sessionCount := len(repo.Sessions)
+		rows := (sessionCount + cardsPerRow - 1) / cardsPerRow // ceiling division
+		totalRows += rows
+	}
+
+	// Height calculation:
+	// - Each repo header: 2 lines (blank + name)
+	// - Each row of cards: cardHeight lines + 1 blank line after
+	// - Some buffer for frame/borders
+	repoCount := len(repos)
+	repoHeaderLines := repoCount * 2
+	largeCardsHeight := totalRows*(largeCardHeight+1) + repoHeaderLines
+
+	// Use large cards if they fit, otherwise compact
+	if largeCardsHeight <= availableHeight {
+		return ui.CardSizeLarge
+	}
+	return ui.CardSizeCompact
+}
+
 // renderCards renders session cards in a grid.
-func (c *DashboardController) renderCards(v *gocui.View, sessions []*state.Session, cardWidth, cardsPerRow int, selectedName string) {
+func (c *DashboardController) renderCards(v *gocui.View, sessions []*state.Session, cardWidth, cardsPerRow int, selectedName string, cardSize ui.CardSize) {
 	if len(sessions) == 0 {
 		return
 	}
@@ -127,7 +161,7 @@ func (c *DashboardController) renderCards(v *gocui.View, sessions []*state.Sessi
 	// Build cards
 	cards := make([]*ui.Card, len(sessions))
 	for i, sess := range sessions {
-		cards[i] = c.buildCard(sess, cardWidth, sess.Name == selectedName)
+		cards[i] = c.buildCard(sess, cardWidth, sess.Name == selectedName, cardSize)
 	}
 
 	// Render in rows
@@ -169,7 +203,7 @@ func (c *DashboardController) renderCards(v *gocui.View, sessions []*state.Sessi
 }
 
 // buildCard builds a card for a session.
-func (c *DashboardController) buildCard(sess *state.Session, width int, selected bool) *ui.Card {
+func (c *DashboardController) buildCard(sess *state.Session, width int, selected bool, cardSize ui.CardSize) *ui.Card {
 	// Extract session display name (remove repo prefix if present)
 	displayName := sess.Name
 	if sess.RepoName != "" && strings.HasPrefix(sess.Name, sess.RepoName+"-") {
@@ -207,9 +241,13 @@ func (c *DashboardController) buildCard(sess *state.Session, width int, selected
 		}
 	}
 
-	// Build tool history (last 3 tool names with timestamps)
+	// Build tool history (5 tools for large cards, fewer for compact)
 	var toolHistory []string
-	for i := 0; i < len(sess.ToolHistory) && i < 3; i++ {
+	maxTools := 5
+	if cardSize == ui.CardSizeCompact {
+		maxTools = 0 // Compact cards don't show tool history
+	}
+	for i := 0; i < len(sess.ToolHistory) && i < maxTools; i++ {
 		entry := sess.ToolHistory[i]
 		ts := entry.Timestamp.Local().Format("15:04:05")
 		toolHistory = append(toolHistory, fmt.Sprintf("%s %s", ts, entry.Tool))
@@ -236,6 +274,7 @@ func (c *DashboardController) buildCard(sess *state.Session, width int, selected
 		Width:       width,
 		Selected:    selected,
 		BorderColor: ui.StatusColor(sess.Attached, sess.Status),
+		Size:        cardSize,
 	}
 }
 
