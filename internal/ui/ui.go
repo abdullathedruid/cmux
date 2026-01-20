@@ -157,6 +157,11 @@ func (c *Card) borderLine(content string, innerWidth int) string {
 
 // Truncate shortens a string to fit in the given width.
 func Truncate(s string, width int) string {
+	return truncate(s, width)
+}
+
+// truncate is the internal version of Truncate.
+func truncate(s string, width int) string {
 	if runewidth.StringWidth(s) <= width {
 		return s
 	}
@@ -203,7 +208,7 @@ func RenderStatusBar(sessionCount, attachedCount, activeCount int, isDashboard b
 
 	idleCount := sessionCount - attachedCount - activeCount
 	stats := fmt.Sprintf("%d sessions │ %d attached │ %d active │ %d idle", sessionCount, attachedCount, activeCount, idleCount)
-	help := "hjkl:nav enter:attach n:new ?:help v:" + viewName
+	help := "hjkl:nav enter:attach p:popup n:new ?:help v:" + viewName
 
 	return stats + "        " + help
 }
@@ -231,6 +236,7 @@ func HelpText() string {
 Navigation
   h/j/k/l or arrows  Navigate between sessions
   Enter              Attach to selected session
+  p                  Open session in popup (tmux 3.2+)
   Tab                Cycle panels (list view)
   1-9                Jump to session by number
 

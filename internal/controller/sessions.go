@@ -85,6 +85,9 @@ func (c *SessionsController) Keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding(sessionsViewName, gocui.KeyEnter, gocui.ModNone, c.attach); err != nil {
 		return err
 	}
+	if err := g.SetKeybinding(sessionsViewName, 'p', gocui.ModNone, c.popupAttach); err != nil {
+		return err
+	}
 	if err := g.SetKeybinding(sessionsViewName, 'n', gocui.ModNone, c.newSession); err != nil {
 		return err
 	}
@@ -248,6 +251,17 @@ func (c *SessionsController) attach(g *gocui.Gui, v *gocui.View) error {
 	}
 	if c.ctx.OnAttach != nil {
 		return c.ctx.OnAttach(sess.Name)
+	}
+	return nil
+}
+
+func (c *SessionsController) popupAttach(g *gocui.Gui, v *gocui.View) error {
+	sess := c.ctx.State.GetSelectedSession()
+	if sess == nil {
+		return nil
+	}
+	if c.ctx.OnPopupAttach != nil {
+		return c.ctx.OnPopupAttach(sess.Name)
 	}
 	return nil
 }

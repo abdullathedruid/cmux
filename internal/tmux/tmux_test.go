@@ -173,3 +173,42 @@ delta	/delta	1704067500	0	2
 		t.Errorf("expected 1 attached session, got %d", attachedCount)
 	}
 }
+
+func TestParseVersionSupportsPopup(t *testing.T) {
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		// Versions that support popup (>= 3.2)
+		{"tmux 3.2", true},
+		{"tmux 3.2a", true},
+		{"tmux 3.3", true},
+		{"tmux 3.3a", true},
+		{"tmux 3.4", true},
+		{"tmux 4.0", true},
+		{"tmux next-3.4", true},
+
+		// Versions that don't support popup (< 3.2)
+		{"tmux 3.1", false},
+		{"tmux 3.1c", false},
+		{"tmux 3.0", false},
+		{"tmux 3.0a", false},
+		{"tmux 2.9", false},
+		{"tmux 2.9a", false},
+		{"tmux 2.8", false},
+		{"tmux 1.8", false},
+
+		// Invalid versions
+		{"", false},
+		{"tmux", false},
+		{"invalid", false},
+		{"tmux abc", false},
+	}
+
+	for _, tt := range tests {
+		got := parseVersionSupportsPopup(tt.version)
+		if got != tt.want {
+			t.Errorf("parseVersionSupportsPopup(%q) = %v, want %v", tt.version, got, tt.want)
+		}
+	}
+}

@@ -163,13 +163,13 @@ func TestRenderStatusBar(t *testing.T) {
 
 func TestCardRender(t *testing.T) {
 	card := &Card{
-		Title:    "test-card",
-		Status:   "IDLE",
-		Icon:     "○",
-		Path:     "~/code/test",
-		Note:     "Test note",
-		Width:    30,
-		Selected: false,
+		Title:      "test-card",
+		Status:     "IDLE",
+		Icon:       "○",
+		LastActive: "5m ago",
+		Note:       "Test note",
+		Width:      30,
+		Selected:   false,
 	}
 
 	lines := card.Render()
@@ -188,20 +188,20 @@ func TestCardRender(t *testing.T) {
 		t.Error("second line should contain status")
 	}
 
-	// Check path line
-	if !strings.Contains(lines[2], "~/code/test") {
-		t.Error("third line should contain path")
+	// Check last active line
+	if !strings.Contains(lines[2], "5m ago") {
+		t.Error("third line should contain last active time")
 	}
 }
 
 func TestCardRenderSelected(t *testing.T) {
 	card := &Card{
-		Title:    "selected",
-		Status:   "ATTACHED",
-		Icon:     "●",
-		Path:     "/test",
-		Width:    25,
-		Selected: true,
+		Title:      "selected",
+		Status:     "ATTACHED",
+		Icon:       "●",
+		LastActive: "1m ago",
+		Width:      25,
+		Selected:   true,
 	}
 
 	lines := card.Render()

@@ -39,6 +39,10 @@ type Client interface {
 	CapturePane(name string, lines int) (string, error)
 	// SendKeys sends keys to a session.
 	SendKeys(name string, keys string) error
+	// SupportsPopup returns true if tmux version supports display-popup (3.2+).
+	SupportsPopup() bool
+	// DisplayPopup opens a session in a tmux popup window.
+	DisplayPopup(name string) error
 }
 
 // RealClient implements Client using actual tmux commands.
@@ -206,6 +210,68 @@ func (c *RealClient) SendKeys(name string, keys string) error {
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("tmux send-keys: %w: %s", err, stderr.String())
+	}
+	return nil
+}
+
+// SupportsPopup returns true if tmux version supports display-popup (3.2+).
+func (c *RealClient) SupportsPopup() bool {
+	cmd := exec.Command("tmux", "-V")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+
+	return parseVersionSupportsPopup(stdout.String())
+}
+
+// parseVersionSupportsPopup parses tmux version output and returns true if >= 3.2.
+func parseVersionSupportsPopup(versionOutput string) bool {
+	// Parse version from "tmux X.Y" output
+	version := strings.TrimSpace(versionOutput)
+	version = strings.TrimPrefix(version, "tmux ")
+
+	// Handle versions like "3.2a", "3.3", "next-3.4"
+	version = strings.TrimPrefix(version, "next-")
+
+	// Extract major.minor
+	parts := strings.Split(version, ".")
+	if len(parts) < 2 {
+		return false
+	}
+
+	var major, minor int
+	if _, err := fmt.Sscanf(parts[0], "%d", &major); err != nil {
+		return false
+	}
+	// Minor might have suffix like "2a"
+	minorStr := strings.TrimRight(parts[1], "abcdefghijklmnopqrstuvwxyz")
+	if _, err := fmt.Sscanf(minorStr, "%d", &minor); err != nil {
+		return false
+	}
+
+	// display-popup requires tmux 3.2+
+	return major > 3 || (major == 3 && minor >= 2)
+}
+
+// DisplayPopup opens a session in a tmux popup window.
+func (c *RealClient) DisplayPopup(name string) error {
+	// Use display-popup with -E to close on command exit
+	// -w and -h set width/height as percentage
+	// The command attaches to the target session
+	cmd := exec.Command("tmux", "display-popup",
+		"-E",       // Close popup when command exits
+		"-w", "80%", // Width
+		"-h", "80%", // Height
+		"tmux", "attach-session", "-t", name,
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("tmux display-popup: %w: %s", err, stderr.String())
 	}
 	return nil
 }

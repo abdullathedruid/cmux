@@ -63,6 +63,7 @@ func New(cfg *config.Config) (*App, error) {
 
 	// Set up context callbacks
 	ctx.OnAttach = app.attachSession
+	ctx.OnPopupAttach = app.popupSession
 	ctx.OnNew = app.newSession
 	ctx.OnDelete = app.deleteSession
 	ctx.OnRefresh = app.refresh
@@ -466,6 +467,22 @@ func (a *App) attachSession(name string) error {
 	// The Run() loop will handle the actual attach and reinitialize after detach
 	a.pendingAttach = name
 	return gocui.ErrQuit
+}
+
+func (a *App) popupSession(name string) error {
+	// Popup only works when inside tmux and when tmux supports it
+	if !a.tmux.IsInsideTmux() {
+		// Fall back to regular attach when not inside tmux
+		return a.attachSession(name)
+	}
+
+	if !a.tmux.SupportsPopup() {
+		// Fall back to switch-client when popup not supported
+		return a.tmux.SwitchSession(name)
+	}
+
+	// Open in popup - this blocks until popup closes
+	return a.tmux.DisplayPopup(name)
 }
 
 func (a *App) newSession() error {
