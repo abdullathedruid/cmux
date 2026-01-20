@@ -232,7 +232,7 @@ func (c *DashboardController) renderCards(v *gocui.View, sessions []*state.Sessi
 // activityEntry represents a tool activity with session context.
 type activityEntry struct {
 	SessionName string
-	Tool        string
+	Tool        string // detailed summary (e.g., "Running: git status")
 	Timestamp   time.Time
 }
 
@@ -242,9 +242,14 @@ func (c *DashboardController) renderRecentActivity(v *gocui.View, width, maxLine
 	var activities []activityEntry
 	for _, sess := range c.ctx.State.GetSessions() {
 		for _, entry := range sess.ToolHistory {
+			// Use Summary for detailed info, fall back to Tool name
+			toolDesc := entry.Summary
+			if toolDesc == "" {
+				toolDesc = entry.Tool
+			}
 			activities = append(activities, activityEntry{
 				SessionName: sess.Name,
-				Tool:        entry.Tool,
+				Tool:        toolDesc,
 				Timestamp:   entry.Timestamp,
 			})
 		}
@@ -353,7 +358,12 @@ func (c *DashboardController) buildCard(sess *state.Session, width int, selected
 	for i := 0; i < len(sess.ToolHistory) && i < maxTools; i++ {
 		entry := sess.ToolHistory[i]
 		ts := entry.Timestamp.Local().Format("15:04:05")
-		toolHistory = append(toolHistory, fmt.Sprintf("%s %s", ts, entry.Tool))
+		// Use Summary for detailed info (e.g., "Running: git status") or fall back to Tool name
+		toolDesc := entry.Summary
+		if toolDesc == "" {
+			toolDesc = entry.Tool
+		}
+		toolHistory = append(toolHistory, fmt.Sprintf("%s %s", ts, toolDesc))
 	}
 
 	// Get last prompt (first line, truncated)
