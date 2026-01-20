@@ -3,11 +3,11 @@ package controller
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/jesseduffield/gocui"
 
-	"github.com/abdullathedruid/cmux/internal/git"
 	"github.com/abdullathedruid/cmux/internal/state"
 	"github.com/abdullathedruid/cmux/internal/ui"
 )
@@ -180,10 +180,11 @@ func (c *DashboardController) buildCard(sess *state.Session, width int, selected
 	icon := ui.StatusIcon(sess.Attached, sess.Status)
 	status := ui.StatusText(sess.Attached, sess.Status)
 
-	// Format path
-	path := git.ShortenPath(sess.Worktree)
-	if path == "" {
-		path = git.ShortenPath(sess.RepoPath)
+	// Format last active time
+	lastActive := ""
+	if !sess.LastActive.IsZero() {
+		seconds := int64(time.Since(sess.LastActive).Seconds())
+		lastActive = ui.FormatDuration(seconds)
 	}
 
 	// Get first line of note
@@ -197,13 +198,14 @@ func (c *DashboardController) buildCard(sess *state.Session, width int, selected
 	}
 
 	return &ui.Card{
-		Title:    displayName,
-		Status:   status,
-		Icon:     icon,
-		Path:     path,
-		Note:     note,
-		Width:    width,
-		Selected: selected,
+		Title:       displayName,
+		Status:      status,
+		Icon:        icon,
+		LastActive:  lastActive,
+		CurrentTool: sess.CurrentTool,
+		Note:        note,
+		Width:       width,
+		Selected:    selected,
 	}
 }
 

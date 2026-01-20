@@ -22,29 +22,34 @@ type FileStatus struct {
 }
 
 // ReadStatus reads the status for a given tmux session name.
-// Returns the status string, current tool (if any), and whether the status was found.
-func ReadStatus(sessionName string) (status string, tool string, found bool) {
+// Returns the status string, current tool (if any), last active time, and whether the status was found.
+func ReadStatus(sessionName string) (status string, tool string, lastActive time.Time, found bool) {
 	statusFile := filepath.Join(StatusDir(), sessionName+".status")
 
 	data, err := os.ReadFile(statusFile)
 	if err != nil {
-		return "idle", "", false
+		return "idle", "", time.Time{}, false
 	}
 
 	var fs FileStatus
 	if err := json.Unmarshal(data, &fs); err != nil {
-		return "idle", "", false
+		return "idle", "", time.Time{}, false
+	}
+
+	// Convert timestamp to time.Time
+	if fs.TS > 0 {
+		lastActive = time.Unix(fs.TS, 0)
 	}
 
 	// Check if status is stale (older than 30 seconds = probably not running)
 	if fs.TS > 0 {
 		age := time.Now().Unix() - fs.TS
 		if age > 30 {
-			return "idle", "", true
+			return "idle", "", lastActive, true
 		}
 	}
 
-	return fs.Status, fs.Tool, true
+	return fs.Status, fs.Tool, lastActive, true
 }
 
 // CleanupStatus removes the status file for a session.

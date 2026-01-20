@@ -73,13 +73,14 @@ func StatusText(attached bool, status state.SessionStatus) string {
 
 // Card renders a session card for the dashboard view.
 type Card struct {
-	Title    string
-	Status   string
-	Icon     string
-	Path     string
-	Note     string
-	Width    int
-	Selected bool
+	Title       string
+	Status      string
+	Icon        string
+	LastActive  string
+	CurrentTool string
+	Note        string
+	Width       int
+	Selected    bool
 }
 
 // Render renders the card as a string slice (one per line).
@@ -105,12 +106,19 @@ func (c *Card) Render() []string {
 	}
 	lines = append(lines, corner+c.Title+" "+strings.Repeat(borderChar, max(0, width-runewidth.StringWidth(c.Title)-3))+endCorner)
 
-	// Status line
+	// Status line with current tool if present
 	statusLine := fmt.Sprintf("%s %s", c.Icon, c.Status)
-	lines = append(lines, c.borderLine(statusLine, innerWidth))
+	if c.CurrentTool != "" {
+		statusLine = fmt.Sprintf("%s %s: %s", c.Icon, c.Status, c.CurrentTool)
+	}
+	lines = append(lines, c.borderLine(truncate(statusLine, innerWidth), innerWidth))
 
-	// Path line
-	lines = append(lines, c.borderLine(truncate(c.Path, innerWidth), innerWidth))
+	// Last active line
+	if c.LastActive != "" {
+		lines = append(lines, c.borderLine(c.LastActive, innerWidth))
+	} else {
+		lines = append(lines, c.borderLine("", innerWidth))
+	}
 
 	// Note line (if present)
 	if c.Note != "" {

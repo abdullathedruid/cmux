@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/jesseduffield/gocui"
@@ -187,11 +188,23 @@ func (c *SessionsController) renderDetails(g *gocui.Gui) error {
 	fmt.Fprintf(v, "  Worktree: %s\n", git.ShortenPath(worktreePath))
 
 	fmt.Fprintf(v, "  Branch:   %s\n", sess.Branch)
-	fmt.Fprintf(v, "  Status:   %s\n", ui.StatusText(sess.Attached, sess.Status))
+
+	// Status with current tool if present
+	statusText := ui.StatusText(sess.Attached, sess.Status)
+	if sess.CurrentTool != "" {
+		statusText = fmt.Sprintf("%s (%s)", statusText, sess.CurrentTool)
+	}
+	fmt.Fprintf(v, "  Status:   %s\n", statusText)
 
 	// Created time
 	if !sess.Created.IsZero() {
 		fmt.Fprintf(v, "  Created:  %s\n", sess.Created.Format("2006-01-02 15:04"))
+	}
+
+	// Last active time
+	if !sess.LastActive.IsZero() {
+		seconds := int64(time.Since(sess.LastActive).Seconds())
+		fmt.Fprintf(v, "  Active:   %s\n", ui.FormatDuration(seconds))
 	}
 
 	// Note
