@@ -40,7 +40,7 @@ func (c *SessionsController) Layout(g *gocui.Gui) error {
 		splitX = 25
 	}
 
-	v, err := g.SetView(sessionsViewName, 0, 0, splitX-1, maxY-2)
+	v, err := g.SetView(sessionsViewName, 0, 0, splitX-1, maxY-2, 0)
 	if err != nil && err != gocui.ErrUnknownView {
 		return err
 	}
@@ -52,7 +52,7 @@ func (c *SessionsController) Layout(g *gocui.Gui) error {
 	v.SelFgColor = gocui.ColorWhite
 
 	// Details panel on the right
-	dv, err := g.SetView(detailsViewName, splitX, 0, maxX-1, maxY-2)
+	dv, err := g.SetView(detailsViewName, splitX, 0, maxX-1, maxY-2, 0)
 	if err != nil && err != gocui.ErrUnknownView {
 		return err
 	}
@@ -153,9 +153,8 @@ func (c *SessionsController) renderSessionsList(g *gocui.Gui) error {
 	}
 
 	// Set cursor position to selected line
-	if err := v.SetCursor(0, selectedLine); err != nil {
-		v.SetOrigin(0, max(0, selectedLine-5))
-	}
+	v.SetCursor(0, selectedLine)
+	v.SetOrigin(0, max(0, selectedLine-5))
 
 	return nil
 }

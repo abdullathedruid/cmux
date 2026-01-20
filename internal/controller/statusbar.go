@@ -29,7 +29,7 @@ func (c *StatusBarController) Name() string {
 func (c *StatusBarController) Layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
 
-	v, err := g.SetView(statusBarViewName, 0, maxY-2, maxX-1, maxY)
+	v, err := g.SetView(statusBarViewName, 0, maxY-2, maxX-1, maxY, 0)
 	if err != nil && err != gocui.ErrUnknownView {
 		return err
 	}

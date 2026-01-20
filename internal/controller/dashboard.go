@@ -33,7 +33,7 @@ func (c *DashboardController) Layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
 
 	// Main view takes most of the screen, leaving 1 line for status bar
-	v, err := g.SetView(dashboardViewName, 0, 0, maxX-1, maxY-2)
+	v, err := g.SetView(dashboardViewName, 0, 0, maxX-1, maxY-2, 0)
 	if err != nil && err != gocui.ErrUnknownView {
 		return err
 	}

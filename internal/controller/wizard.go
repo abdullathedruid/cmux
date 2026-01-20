@@ -38,23 +38,30 @@ type WizardController struct {
 }
 
 // Edit handles key input for the wizard modal.
-func (c *WizardController) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
+func (c *WizardController) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) bool {
 	switch {
 	case key == gocui.KeyEsc:
 		c.back(c.gui, v)
+		return true
 	case key == gocui.KeyEnter:
 		c.select_(c.gui, v)
+		return true
 	case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
 		c.backspace(c.gui, v)
+		return true
 	case key == gocui.KeyArrowDown || ch == 'j':
 		c.cursorDown(c.gui, v)
+		return true
 	case key == gocui.KeyArrowUp || ch == 'k':
 		c.cursorUp(c.gui, v)
+		return true
 	case ch != 0 && mod == gocui.ModNone && c.step == stepEnterBranchName:
 		// Only accept character input in branch name entry mode
 		c.inputBuffer += string(ch)
 		c.Render(c.gui)
+		return true
 	}
+	return false
 }
 
 // NewWizardController creates a new wizard controller.
@@ -130,7 +137,7 @@ func (c *WizardController) Layout(g *gocui.Gui) error {
 	x0 := (maxX - width) / 2
 	y0 := (maxY - height) / 2
 
-	v, err := g.SetView(wizardViewName, x0, y0, x0+width, y0+height)
+	v, err := g.SetView(wizardViewName, x0, y0, x0+width, y0+height, 0)
 	if err != nil && err != gocui.ErrUnknownView {
 		return err
 	}
@@ -139,9 +146,10 @@ func (c *WizardController) Layout(g *gocui.Gui) error {
 	v.Wrap = false
 	v.Frame = true
 	v.Editable = true
+	v.Editor = gocui.EditorFunc(c.Edit)
 
 	// Set as top view
-	if err := g.SetCurrentView(wizardViewName); err != nil {
+	if _, err := g.SetCurrentView(wizardViewName); err != nil {
 		return err
 	}
 

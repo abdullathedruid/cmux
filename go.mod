@@ -1,11 +1,20 @@
 module github.com/abdullathedruid/cmux
 
-go 1.24.0
+go 1.25
 
-require github.com/jesseduffield/gocui v0.3.0
+require (
+	github.com/jesseduffield/gocui v0.3.1-0.20260111170441-330357056207
+	github.com/mattn/go-runewidth v0.0.19
+)
 
 require (
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
-	github.com/mattn/go-runewidth v0.0.19 // indirect
-	github.com/nsf/termbox-go v1.1.1 // indirect
+	github.com/gdamore/encoding v1.0.1 // indirect
+	github.com/gdamore/tcell/v2 v2.13.5 // indirect
+	github.com/go-errors/errors v1.0.2 // indirect
+	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
+	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/term v0.38.0 // indirect
+	golang.org/x/text v0.32.0 // indirect
 )

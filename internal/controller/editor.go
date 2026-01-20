@@ -20,20 +20,26 @@ type EditorController struct {
 }
 
 // Edit handles key input for the editor modal.
-func (c *EditorController) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
+func (c *EditorController) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) bool {
 	switch {
 	case key == gocui.KeyEsc:
 		c.cancel(c.gui, v)
+		return true
 	case key == gocui.KeyCtrlS:
 		c.save(c.gui, v)
+		return true
 	case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
 		c.backspace(c.gui, v)
+		return true
 	case key == gocui.KeyEnter:
 		c.newline(c.gui, v)
+		return true
 	case ch != 0 && mod == gocui.ModNone:
 		c.content += string(ch)
 		c.Render(c.gui)
+		return true
 	}
+	return false
 }
 
 // NewEditorController creates a new editor controller.
@@ -84,7 +90,7 @@ func (c *EditorController) Layout(g *gocui.Gui) error {
 	x0 := (maxX - width) / 2
 	y0 := (maxY - height) / 2
 
-	v, err := g.SetView(editorViewName, x0, y0, x0+width, y0+height)
+	v, err := g.SetView(editorViewName, x0, y0, x0+width, y0+height, 0)
 	if err != nil && err != gocui.ErrUnknownView {
 		return err
 	}
@@ -93,9 +99,10 @@ func (c *EditorController) Layout(g *gocui.Gui) error {
 	v.Wrap = true
 	v.Frame = true
 	v.Editable = true
+	v.Editor = gocui.EditorFunc(c.Edit)
 
 	// Set as top view
-	if err := g.SetCurrentView(editorViewName); err != nil {
+	if _, err := g.SetCurrentView(editorViewName); err != nil {
 		return err
 	}
 

@@ -41,28 +41,6 @@ type App struct {
 	pendingAttach string
 }
 
-// appEditor implements gocui.Editor to handle input for modals.
-type appEditor struct {
-	app *App
-}
-
-func (e *appEditor) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
-	// Dispatch to the appropriate modal if visible
-	switch {
-	case e.app.editor.IsVisible():
-		e.app.editor.Edit(v, key, ch, mod)
-	case e.app.search.IsVisible():
-		e.app.search.Edit(v, key, ch, mod)
-	case e.app.wizard.IsVisible():
-		e.app.wizard.Edit(v, key, ch, mod)
-	case e.app.worktree.IsVisible():
-		e.app.worktree.Edit(v, key, ch, mod)
-	default:
-		// For non-modal views, use default editor behavior
-		gocui.DefaultEditor.Edit(v, key, ch, mod)
-	}
-}
-
 // New creates a new App.
 func New(cfg *config.Config) (*App, error) {
 	s := state.New()
@@ -107,16 +85,17 @@ func New(cfg *config.Config) (*App, error) {
 
 // initGui initializes or reinitializes the gocui GUI.
 func (a *App) initGui() error {
-	g := gocui.NewGui()
-	if err := g.Init(); err != nil {
+	g, err := gocui.NewGui(gocui.NewGuiOpts{
+		OutputMode: gocui.OutputTrue,
+	})
+	if err != nil {
 		return fmt.Errorf("initializing gui: %w", err)
 	}
 
 	a.gui = g
-	a.gui.SetLayout(a.layout)
+	a.gui.SetManagerFunc(a.layout)
 	a.gui.Mouse = false
 	a.gui.Cursor = false
-	a.gui.Editor = &appEditor{app: a}
 
 	// Set up keybindings
 	if err := a.setupKeybindings(); err != nil {
@@ -156,9 +135,6 @@ func (a *App) Run() error {
 			a.pendingAttach = ""
 			// This blocks until the user detaches
 			a.tmux.AttachSession(name)
-			// Small delay to allow termbox goroutines to fully exit
-			// before reinitializing the GUI
-			time.Sleep(50 * time.Millisecond)
 			// Loop back to reinitialize GUI
 			continue
 		}
@@ -187,7 +163,7 @@ func (a *App) layout(g *gocui.Gui) error {
 		if err := a.dashboard.Layout(g); err != nil {
 			return err
 		}
-		if err := g.SetCurrentView("dashboard"); err != nil {
+		if _, err := g.SetCurrentView("dashboard"); err != nil {
 			return err
 		}
 	} else {
@@ -197,7 +173,7 @@ func (a *App) layout(g *gocui.Gui) error {
 		if err := a.sessions.Layout(g); err != nil {
 			return err
 		}
-		if err := g.SetCurrentView("sessions"); err != nil {
+		if _, err := g.SetCurrentView("sessions"); err != nil {
 			return err
 		}
 	}
@@ -562,7 +538,7 @@ func (a *App) backgroundRefresh(stop <-chan struct{}) {
 		case <-stop:
 			return
 		case <-ticker.C:
-			a.gui.Execute(func(g *gocui.Gui) error {
+			a.gui.Update(func(g *gocui.Gui) error {
 				if err := a.refresh(); err != nil {
 					return nil // Don't crash on refresh errors
 				}

@@ -65,7 +65,7 @@ func (c *HelpController) Layout(g *gocui.Gui) error {
 	x0 := (maxX - width) / 2
 	y0 := (maxY - height) / 2
 
-	v, err := g.SetView(helpViewName, x0, y0, x0+width, y0+height)
+	v, err := g.SetView(helpViewName, x0, y0, x0+width, y0+height, 0)
 	if err != nil && err != gocui.ErrUnknownView {
 		return err
 	}
@@ -75,7 +75,7 @@ func (c *HelpController) Layout(g *gocui.Gui) error {
 	v.Frame = true
 
 	// Set as top view
-	if err := g.SetCurrentView(helpViewName); err != nil {
+	if _, err := g.SetCurrentView(helpViewName); err != nil {
 		return err
 	}
 
