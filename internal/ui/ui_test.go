@@ -132,7 +132,8 @@ func TestCenter(t *testing.T) {
 }
 
 func TestRenderStatusBar(t *testing.T) {
-	result := RenderStatusBar(5, 2, true)
+	// 5 sessions, 2 attached, 1 active, 2 idle
+	result := RenderStatusBar(5, 2, 1, true)
 
 	if !strings.Contains(result, "5 sessions") {
 		t.Error("status bar should contain session count")
@@ -140,16 +141,23 @@ func TestRenderStatusBar(t *testing.T) {
 	if !strings.Contains(result, "2 attached") {
 		t.Error("status bar should contain attached count")
 	}
-	if !strings.Contains(result, "3 idle") {
+	if !strings.Contains(result, "1 active") {
+		t.Error("status bar should contain active count")
+	}
+	if !strings.Contains(result, "2 idle") {
 		t.Error("status bar should contain idle count")
 	}
 	if !strings.Contains(result, "dashboard") {
 		t.Error("status bar should mention dashboard view")
 	}
 
-	result = RenderStatusBar(3, 0, false)
+	// 3 sessions, 0 attached, 0 active, 3 idle
+	result = RenderStatusBar(3, 0, 0, false)
 	if !strings.Contains(result, "list") {
 		t.Error("status bar should mention list view")
+	}
+	if !strings.Contains(result, "3 idle") {
+		t.Error("status bar should show 3 idle when no attached or active")
 	}
 }
 

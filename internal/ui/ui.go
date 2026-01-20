@@ -187,14 +187,14 @@ func Center(s string, width int) string {
 }
 
 // RenderStatusBar creates the bottom status bar content.
-func RenderStatusBar(sessionCount, attachedCount int, isDashboard bool) string {
+func RenderStatusBar(sessionCount, attachedCount, activeCount int, isDashboard bool) string {
 	viewName := "dashboard"
 	if !isDashboard {
 		viewName = "list"
 	}
 
-	idleCount := sessionCount - attachedCount
-	stats := fmt.Sprintf("%d sessions │ %d attached │ %d idle", sessionCount, attachedCount, idleCount)
+	idleCount := sessionCount - attachedCount - activeCount
+	stats := fmt.Sprintf("%d sessions │ %d attached │ %d active │ %d idle", sessionCount, attachedCount, activeCount, idleCount)
 	help := "hjkl:nav enter:attach n:new ?:help v:" + viewName
 
 	return stats + "        " + help

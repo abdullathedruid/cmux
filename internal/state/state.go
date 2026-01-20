@@ -304,6 +304,20 @@ func (s *State) AttachedCount() int {
 	return count
 }
 
+// ActiveCount returns the number of non-attached sessions that are active (not idle).
+func (s *State) ActiveCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	count := 0
+	for _, sess := range s.sessions {
+		if !sess.Attached && sess.Status != StatusIdle {
+			count++
+		}
+	}
+	return count
+}
+
 // UpdateNote updates a session's note.
 func (s *State) UpdateNote(name, note string) {
 	s.mu.Lock()

@@ -58,9 +58,10 @@ func (c *StatusBarController) Render(g *gocui.Gui) error {
 
 	sessionCount := c.ctx.State.SessionCount()
 	attachedCount := c.ctx.State.AttachedCount()
+	activeCount := c.ctx.State.ActiveCount()
 	isDashboard := c.ctx.State.IsDashboardView()
 
-	content := ui.RenderStatusBar(sessionCount, attachedCount, isDashboard)
+	content := ui.RenderStatusBar(sessionCount, attachedCount, activeCount, isDashboard)
 	fmt.Fprint(v, " "+content)
 
 	return nil
