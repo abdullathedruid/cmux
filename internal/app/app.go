@@ -100,7 +100,7 @@ func (a *App) initGui() error {
 	// Set up keybindings
 	if err := a.setupKeybindings(); err != nil {
 		a.gui.Close()
-		return err
+		return fmt.Errorf("setting up keybindings: %w", err)
 	}
 
 	return nil
@@ -151,7 +151,7 @@ func (a *App) Run() error {
 func (a *App) layout(g *gocui.Gui) error {
 	// Status bar at bottom
 	if err := a.statusBar.Layout(g); err != nil {
-		return err
+		return fmt.Errorf("statusBar.Layout: %w", err)
 	}
 
 	// Main view depends on current mode
@@ -161,60 +161,60 @@ func (a *App) layout(g *gocui.Gui) error {
 		g.DeleteView("details")
 
 		if err := a.dashboard.Layout(g); err != nil {
-			return err
+			return fmt.Errorf("dashboard.Layout: %w", err)
 		}
 		if _, err := g.SetCurrentView("dashboard"); err != nil {
-			return err
+			return fmt.Errorf("SetCurrentView(dashboard): %w", err)
 		}
 	} else {
 		// Delete dashboard view if it exists
 		g.DeleteView("dashboard")
 
 		if err := a.sessions.Layout(g); err != nil {
-			return err
+			return fmt.Errorf("sessions.Layout: %w", err)
 		}
 		if _, err := g.SetCurrentView("sessions"); err != nil {
-			return err
+			return fmt.Errorf("SetCurrentView(sessions): %w", err)
 		}
 	}
 
 	// Render content
 	if err := a.render(); err != nil {
-		return err
+		return fmt.Errorf("render: %w", err)
 	}
 
 	// Help overlay (if visible)
 	if a.help.IsVisible() {
 		if err := a.help.Layout(g); err != nil {
-			return err
+			return fmt.Errorf("help.Layout: %w", err)
 		}
 	}
 
 	// Worktree picker overlay (if visible)
 	if a.worktree.IsVisible() {
 		if err := a.worktree.Layout(g); err != nil {
-			return err
+			return fmt.Errorf("worktree.Layout: %w", err)
 		}
 	}
 
 	// Editor overlay (if visible)
 	if a.editor.IsVisible() {
 		if err := a.editor.Layout(g); err != nil {
-			return err
+			return fmt.Errorf("editor.Layout: %w", err)
 		}
 	}
 
 	// Search overlay (if visible)
 	if a.search.IsVisible() {
 		if err := a.search.Layout(g); err != nil {
-			return err
+			return fmt.Errorf("search.Layout: %w", err)
 		}
 	}
 
 	// Wizard overlay (if visible)
 	if a.wizard.IsVisible() {
 		if err := a.wizard.Layout(g); err != nil {
-			return err
+			return fmt.Errorf("wizard.Layout: %w", err)
 		}
 	}
 
@@ -225,77 +225,80 @@ func (a *App) layout(g *gocui.Gui) error {
 func (a *App) render() error {
 	if a.state.IsDashboardView() {
 		if err := a.dashboard.Render(a.gui); err != nil {
-			return err
+			return fmt.Errorf("dashboard.Render: %w", err)
 		}
 	} else {
 		if err := a.sessions.Render(a.gui); err != nil {
-			return err
+			return fmt.Errorf("sessions.Render: %w", err)
 		}
 	}
-	return a.statusBar.Render(a.gui)
+	if err := a.statusBar.Render(a.gui); err != nil {
+		return fmt.Errorf("statusBar.Render: %w", err)
+	}
+	return nil
 }
 
 // setupKeybindings sets up global keybindings.
 func (a *App) setupKeybindings() error {
 	// Global quit
 	if err := a.gui.SetKeybinding("", 'q', gocui.ModNone, a.quitHandler); err != nil {
-		return err
+		return fmt.Errorf("keybinding 'q': %w", err)
 	}
 	if err := a.gui.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, a.quitHandler); err != nil {
-		return err
+		return fmt.Errorf("keybinding 'Ctrl+C': %w", err)
 	}
 
 	// Toggle view
 	if err := a.gui.SetKeybinding("", 'v', gocui.ModNone, a.toggleViewHandler); err != nil {
-		return err
+		return fmt.Errorf("keybinding 'v': %w", err)
 	}
 
 	// Help
 	if err := a.gui.SetKeybinding("", '?', gocui.ModNone, a.helpHandler); err != nil {
-		return err
+		return fmt.Errorf("keybinding '?': %w", err)
 	}
 
 	// Worktree picker
 	if err := a.gui.SetKeybinding("", 'w', gocui.ModNone, a.worktreeHandler); err != nil {
-		return err
+		return fmt.Errorf("keybinding 'w': %w", err)
 	}
 
 	// Note editor
 	if err := a.gui.SetKeybinding("", 'e', gocui.ModNone, a.editNoteHandler); err != nil {
-		return err
+		return fmt.Errorf("keybinding 'e': %w", err)
 	}
 
 	// Search
 	if err := a.gui.SetKeybinding("", '/', gocui.ModNone, a.searchHandler); err != nil {
-		return err
+		return fmt.Errorf("keybinding '/': %w", err)
 	}
 
 	// Session wizard (Shift+N)
 	if err := a.gui.SetKeybinding("", 'N', gocui.ModNone, a.wizardHandler); err != nil {
-		return err
+		return fmt.Errorf("keybinding 'N': %w", err)
 	}
 
 	// Set up controller-specific keybindings
 	if err := a.dashboard.Keybindings(a.gui); err != nil {
-		return err
+		return fmt.Errorf("dashboard.Keybindings: %w", err)
 	}
 	if err := a.sessions.Keybindings(a.gui); err != nil {
-		return err
+		return fmt.Errorf("sessions.Keybindings: %w", err)
 	}
 	if err := a.help.Keybindings(a.gui); err != nil {
-		return err
+		return fmt.Errorf("help.Keybindings: %w", err)
 	}
 	if err := a.worktree.Keybindings(a.gui); err != nil {
-		return err
+		return fmt.Errorf("worktree.Keybindings: %w", err)
 	}
 	if err := a.editor.Keybindings(a.gui); err != nil {
-		return err
+		return fmt.Errorf("editor.Keybindings: %w", err)
 	}
 	if err := a.search.Keybindings(a.gui); err != nil {
-		return err
+		return fmt.Errorf("search.Keybindings: %w", err)
 	}
 	if err := a.wizard.Keybindings(a.gui); err != nil {
-		return err
+		return fmt.Errorf("wizard.Keybindings: %w", err)
 	}
 
 	return nil
@@ -382,7 +385,7 @@ func (a *App) refresh() error {
 	// Get tmux sessions
 	tmuxSessions, err := a.tmux.ListSessions()
 	if err != nil {
-		return err
+		return fmt.Errorf("listing tmux sessions: %w", err)
 	}
 
 	// Convert to state sessions
@@ -467,7 +470,7 @@ func (a *App) newSession() error {
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		return err
+		return fmt.Errorf("getting current directory: %w", err)
 	}
 
 	// Try to get repo info
@@ -498,12 +501,12 @@ func (a *App) newSession() error {
 
 	// Create the session
 	if err := a.tmux.CreateSession(sessionName, cwd, true); err != nil {
-		return err
+		return fmt.Errorf("creating session %q: %w", sessionName, err)
 	}
 
 	// Refresh and attach
 	if err := a.refresh(); err != nil {
-		return err
+		return fmt.Errorf("refreshing after session create: %w", err)
 	}
 
 	return a.attachSession(sessionName)
@@ -511,7 +514,7 @@ func (a *App) newSession() error {
 
 func (a *App) deleteSession(name string) error {
 	if err := a.tmux.KillSession(name); err != nil {
-		return err
+		return fmt.Errorf("killing session %q: %w", name, err)
 	}
 	// Also delete the note and status file
 	a.notes.Delete(name)
@@ -522,7 +525,7 @@ func (a *App) deleteSession(name string) error {
 func (a *App) saveNote(sessionName, content string) error {
 	// Save to notes store
 	if err := a.notes.Set(sessionName, content); err != nil {
-		return err
+		return fmt.Errorf("saving note for %q: %w", sessionName, err)
 	}
 	// Update state
 	a.state.UpdateNote(sessionName, content)
