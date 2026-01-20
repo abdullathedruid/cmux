@@ -15,6 +15,7 @@ const (
 	StatusActive
 	StatusTool
 	StatusThinking
+	StatusNeedsInput
 )
 
 func (s SessionStatus) String() string {
@@ -25,6 +26,8 @@ func (s SessionStatus) String() string {
 		return "tool"
 	case StatusThinking:
 		return "thinking"
+	case StatusNeedsInput:
+		return "needs_input"
 	default:
 		return "idle"
 	}

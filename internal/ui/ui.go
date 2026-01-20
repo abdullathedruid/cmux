@@ -34,6 +34,8 @@ func StatusIcon(attached bool, status state.SessionStatus) string {
 		return "⚙" // Gear for tool use
 	case state.StatusThinking:
 		return "◑" // Other half for thinking
+	case state.StatusNeedsInput:
+		return "🔔" // Bell for needs input
 	default:
 		return "○" // Empty circle for idle
 	}
@@ -49,6 +51,8 @@ func StatusColor(attached bool, status state.SessionStatus) string {
 		return ColorYellow
 	case state.StatusTool:
 		return ColorCyan
+	case state.StatusNeedsInput:
+		return ColorMagenta
 	default:
 		return ColorWhite
 	}
@@ -66,6 +70,8 @@ func StatusText(attached bool, status state.SessionStatus) string {
 		return "TOOL"
 	case state.StatusThinking:
 		return "THINKING"
+	case state.StatusNeedsInput:
+		return "INPUT"
 	default:
 		return "IDLE"
 	}

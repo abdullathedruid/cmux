@@ -423,6 +423,8 @@ func (a *App) convertSession(ts tmux.Session) *state.Session {
 			sess.Status = state.StatusActive
 		case "thinking":
 			sess.Status = state.StatusThinking
+		case "needs_input":
+			sess.Status = state.StatusNeedsInput
 		default:
 			sess.Status = state.StatusIdle
 		}

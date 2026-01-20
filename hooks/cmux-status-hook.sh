@@ -17,7 +17,8 @@
 #     "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
 #     "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
 #     "Stop": [{"hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
-#     "SubagentStop": [{"hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}]
+#     "SubagentStop": [{"hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
+#     "Notification": [{"matcher": "permission_prompt", "hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}]
 #   }
 # }
 
@@ -106,6 +107,11 @@ case "$EVENT" in
         [ "$EVENT" = "Stop" ] || [ "$EVENT" = "SubagentStop" ] && STATUS="idle"
         TOOL=""
         SUMMARY=""
+        ;;
+    Notification)
+        STATUS="needs_input"
+        TOOL=""
+        SUMMARY="Waiting for permission"
         ;;
     *)
         STATUS="active"
