@@ -156,6 +156,9 @@ func (a *App) Run() error {
 			a.pendingAttach = ""
 			// This blocks until the user detaches
 			a.tmux.AttachSession(name)
+			// Small delay to allow termbox goroutines to fully exit
+			// before reinitializing the GUI
+			time.Sleep(50 * time.Millisecond)
 			// Loop back to reinitialize GUI
 			continue
 		}
