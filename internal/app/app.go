@@ -415,8 +415,9 @@ func (a *App) convertSession(ts tmux.Session) *state.Session {
 	}
 
 	// Read status from hook-written file
-	if statusStr, tool, summary, lastActive, found := status.ReadStatus(ts.Name); found {
-		switch statusStr {
+	fullStatus := status.ReadFullStatus(ts.Name)
+	if fullStatus.Found {
+		switch fullStatus.Status {
 		case "tool":
 			sess.Status = state.StatusTool
 		case "active":
@@ -428,9 +429,22 @@ func (a *App) convertSession(ts tmux.Session) *state.Session {
 		default:
 			sess.Status = state.StatusIdle
 		}
-		sess.CurrentTool = tool
-		sess.ToolSummary = summary
-		sess.LastActive = lastActive
+		sess.CurrentTool = fullStatus.Tool
+		sess.ToolSummary = fullStatus.Summary
+		sess.LastActive = fullStatus.LastActive
+		sess.SessionID = fullStatus.SessionID
+		sess.LastPrompt = fullStatus.LastPrompt
+
+		// Convert tool history
+		sess.ToolHistory = make([]state.ToolHistoryEntry, len(fullStatus.ToolHistory))
+		for i, entry := range fullStatus.ToolHistory {
+			sess.ToolHistory[i] = state.ToolHistoryEntry{
+				Tool:      entry.Tool,
+				Summary:   entry.Summary,
+				Result:    entry.Result,
+				Timestamp: entry.Timestamp,
+			}
+		}
 	}
 
 	// Try to get git info from the session path

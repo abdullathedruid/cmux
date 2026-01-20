@@ -1,8 +1,8 @@
 #!/bin/bash
-# cmux-status-hook.sh - Claude Code hook for reporting session status to cmux
+# cmux-status-hook.sh - Lightweight Claude Code hook for cmux
 #
-# This script is called by Claude Code hooks and writes status updates
-# to a file that cmux reads to display session status.
+# This hook maps tmux sessions to Claude transcripts and tracks real-time status.
+# Full history is read directly from the JSONL transcript by cmux.
 #
 # Requirements: jq
 #
@@ -13,9 +13,9 @@
 #
 # {
 #   "hooks": {
-#     "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
 #     "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
 #     "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
+#     "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
 #     "Stop": [{"hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
 #     "SubagentStop": [{"hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
 #     "Notification": [{"matcher": "permission_prompt", "hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}]
@@ -24,107 +24,51 @@
 
 set -e
 
-# Status directory - must match what cmux expects
 DIR="${TMPDIR:-/tmp}/cmux/sessions"
 mkdir -p "$DIR"
 
-# Get tmux session name (this works because the hook runs in the tmux pane)
+# Get tmux session name
 SESSION=$(tmux display-message -p '#{session_name}' 2>/dev/null || echo "")
-if [ -z "$SESSION" ]; then
-    exit 0
-fi
+[ -z "$SESSION" ] && exit 0
 
-# Read hook input from stdin
+# Read hook input
 INPUT=$(cat)
 
-# Parse with jq
+# Parse fields
 EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
 TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
-
-# Build summary based on tool type (no truncation - CLI handles display)
-SUMMARY=""
-case "$TOOL" in
-    Read)
-        FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
-        [ -n "$FILE" ] && SUMMARY="Reading ${FILE##*/}"
-        ;;
-    Edit)
-        FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
-        [ -n "$FILE" ] && SUMMARY="Editing ${FILE##*/}"
-        ;;
-    Write)
-        FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
-        [ -n "$FILE" ] && SUMMARY="Writing ${FILE##*/}"
-        ;;
-    Bash)
-        CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
-        [ -n "$CMD" ] && SUMMARY="Running: $CMD"
-        ;;
-    Grep)
-        PATTERN=$(echo "$INPUT" | jq -r '.tool_input.pattern // empty')
-        [ -n "$PATTERN" ] && SUMMARY="Searching: $PATTERN"
-        ;;
-    Glob)
-        PATTERN=$(echo "$INPUT" | jq -r '.tool_input.pattern // empty')
-        [ -n "$PATTERN" ] && SUMMARY="Finding: $PATTERN"
-        ;;
-    Task)
-        DESC=$(echo "$INPUT" | jq -r '.tool_input.description // empty')
-        [ -n "$DESC" ] && SUMMARY="Agent: $DESC"
-        ;;
-    WebFetch)
-        URL=$(echo "$INPUT" | jq -r '.tool_input.url // empty')
-        [ -n "$URL" ] && SUMMARY="Fetching: $URL"
-        ;;
-    WebSearch)
-        QUERY=$(echo "$INPUT" | jq -r '.tool_input.query // empty')
-        [ -n "$QUERY" ] && SUMMARY="Searching: $QUERY"
-        ;;
-    TodoWrite)
-        SUMMARY="Updating todos"
-        ;;
-    LSP)
-        OP=$(echo "$INPUT" | jq -r '.tool_input.operation // empty')
-        FILE=$(echo "$INPUT" | jq -r '.tool_input.filePath // empty')
-        if [ -n "$OP" ] && [ -n "$FILE" ]; then
-            SUMMARY="LSP $OP: ${FILE##*/}"
-        elif [ -n "$OP" ]; then
-            SUMMARY="LSP: $OP"
-        fi
-        ;;
-    *)
-        [ -n "$TOOL" ] && SUMMARY="$TOOL"
-        ;;
-esac
+TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 
 # Determine status based on event
 case "$EVENT" in
     PreToolUse)
         STATUS="tool"
         ;;
-    PostToolUse|Stop|SubagentStop|UserPromptSubmit)
+    PostToolUse|UserPromptSubmit)
         STATUS="active"
-        [ "$EVENT" = "Stop" ] || [ "$EVENT" = "SubagentStop" ] && STATUS="idle"
         TOOL=""
-        SUMMARY=""
+        ;;
+    Stop|SubagentStop)
+        STATUS="idle"
+        TOOL=""
         ;;
     Notification)
         STATUS="needs_input"
         TOOL=""
-        SUMMARY="Waiting for permission"
         ;;
     *)
         STATUS="active"
         TOOL=""
-        SUMMARY=""
         ;;
 esac
 
-# Write status file as JSON
+# Write minimal status file
 jq -n \
     --arg status "$STATUS" \
     --arg tool "$TOOL" \
-    --arg summary "$SUMMARY" \
+    --arg transcript "$TRANSCRIPT" \
+    --arg session_id "$SESSION_ID" \
     --argjson ts "$(date +%s)" \
-    '{status: $status, tool: $tool, summary: $summary, ts: $ts}' \
+    '{status: $status, tool: $tool, transcript_path: $transcript, session_id: $session_id, ts: $ts}' \
     > "$DIR/$SESSION.status"

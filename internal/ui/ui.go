@@ -85,6 +85,8 @@ type Card struct {
 	LastActive  string
 	CurrentTool string
 	Note        string
+	LastPrompt  string   // Last user prompt (truncated)
+	ToolHistory []string // Recent tool summaries
 	Width       int
 	Selected    bool
 }
@@ -99,7 +101,7 @@ func (c *Card) Render() []string {
 	// Calculate inner width (accounting for borders and padding)
 	innerWidth := width - 4 // 2 for borders, 2 for padding
 
-	lines := make([]string, 0, 5)
+	lines := make([]string, 0, 7)
 
 	// Top border
 	borderChar := "─"
@@ -126,12 +128,22 @@ func (c *Card) Render() []string {
 		lines = append(lines, c.borderLine("", innerWidth))
 	}
 
-	// Note line (if present)
-	if c.Note != "" {
-		lines = append(lines, c.borderLine(Truncate(c.Note, innerWidth), innerWidth))
+	// Tool history line (show last 2-3 tools compactly)
+	if len(c.ToolHistory) > 0 {
+		toolLine := strings.Join(c.ToolHistory, " → ")
+		lines = append(lines, c.borderLine(truncate(toolLine, innerWidth), innerWidth))
 	} else {
 		lines = append(lines, c.borderLine("", innerWidth))
 	}
+
+	// Context line: note, last prompt, or empty
+	contextLine := ""
+	if c.Note != "" {
+		contextLine = c.Note
+	} else if c.LastPrompt != "" {
+		contextLine = "› " + c.LastPrompt
+	}
+	lines = append(lines, c.borderLine(Truncate(contextLine, innerWidth), innerWidth))
 
 	// Bottom border
 	bottomCorner := "└"

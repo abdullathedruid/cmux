@@ -180,6 +180,8 @@ func (c *SessionsController) renderDetails(g *gocui.Gui) error {
 		return nil
 	}
 
+	width, _ := v.Size()
+
 	// Session details
 	fmt.Fprintln(v, "")
 	fmt.Fprintf(v, "  Name:     %s\n", sess.Name)
@@ -201,7 +203,6 @@ func (c *SessionsController) renderDetails(g *gocui.Gui) error {
 
 	// Tool summary (shown when using a tool)
 	if sess.ToolSummary != "" {
-		width, _ := v.Size()
 		maxLen := width - 14 // "  Activity: " prefix + margin
 		if maxLen < 20 {
 			maxLen = 20
@@ -220,12 +221,48 @@ func (c *SessionsController) renderDetails(g *gocui.Gui) error {
 		fmt.Fprintf(v, "  Active:   %s\n", ui.FormatDuration(seconds))
 	}
 
+	// Last prompt
+	if sess.LastPrompt != "" {
+		fmt.Fprintln(v, "")
+		fmt.Fprintln(v, "  Last prompt:")
+		maxLen := width - 6
+		if maxLen < 20 {
+			maxLen = 20
+		}
+		promptText := sess.LastPrompt
+		if idx := strings.Index(promptText, "\n"); idx != -1 {
+			promptText = promptText[:idx]
+		}
+		fmt.Fprintf(v, "    %s\n", ui.Truncate(promptText, maxLen))
+	}
+
+	// Tool history
+	if len(sess.ToolHistory) > 0 {
+		fmt.Fprintln(v, "")
+		fmt.Fprintln(v, "  Recent tools:")
+		maxLen := width - 6
+		if maxLen < 20 {
+			maxLen = 20
+		}
+		for i, entry := range sess.ToolHistory {
+			if i >= 5 { // Show max 5 tools
+				break
+			}
+			result := ""
+			if entry.Result != "" {
+				result = " → " + entry.Result
+			}
+			line := fmt.Sprintf("    %s%s", entry.Summary, result)
+			fmt.Fprintln(v, ui.Truncate(line, maxLen+4))
+		}
+	}
+
 	// Note
 	if sess.Note != "" {
 		fmt.Fprintln(v, "")
 		fmt.Fprintln(v, "  Note:")
 		for _, line := range strings.Split(sess.Note, "\n") {
-			fmt.Fprintf(v, "  %s\n", line)
+			fmt.Fprintf(v, "    %s\n", line)
 		}
 	}
 

@@ -33,6 +33,14 @@ func (s SessionStatus) String() string {
 	}
 }
 
+// ToolHistoryEntry represents a single tool execution in the history.
+type ToolHistoryEntry struct {
+	Tool      string
+	Summary   string
+	Result    string
+	Timestamp time.Time
+}
+
 // Session represents a Claude session managed by cmux.
 type Session struct {
 	Name        string        // tmux session name (e.g., "myproject-feature-auth")
@@ -41,12 +49,17 @@ type Session struct {
 	Worktree    string        // worktree path (may equal RepoPath)
 	Branch      string        // current branch
 	Attached    bool          // currently attached
-	Status      SessionStatus // P2: idle, active, tool, thinking
-	CurrentTool string        // P2: current tool being used
+	Status      SessionStatus // idle, active, tool, thinking, needs_input
+	CurrentTool string        // current tool being used
 	ToolSummary string        // one-line summary of what the tool is doing
 	Created     time.Time
 	LastActive  time.Time
 	Note        string
+
+	// Extended status from transcript
+	SessionID   string             // Claude session ID
+	LastPrompt  string             // last user prompt submitted
+	ToolHistory []ToolHistoryEntry // recent tool execution history
 }
 
 // Repository represents a git repository with associated sessions.

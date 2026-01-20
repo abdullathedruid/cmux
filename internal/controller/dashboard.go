@@ -210,6 +210,21 @@ func (c *DashboardController) buildCard(sess *state.Session, width int, selected
 		}
 	}
 
+	// Build tool history (last 3 tool names)
+	var toolHistory []string
+	for i := 0; i < len(sess.ToolHistory) && i < 3; i++ {
+		toolHistory = append(toolHistory, sess.ToolHistory[i].Tool)
+	}
+
+	// Get last prompt (first line, truncated)
+	lastPrompt := ""
+	if sess.LastPrompt != "" {
+		lastPrompt = sess.LastPrompt
+		if idx := strings.Index(lastPrompt, "\n"); idx != -1 {
+			lastPrompt = lastPrompt[:idx]
+		}
+	}
+
 	return &ui.Card{
 		Title:       displayName,
 		Status:      status,
@@ -217,6 +232,8 @@ func (c *DashboardController) buildCard(sess *state.Session, width int, selected
 		LastActive:  lastActive,
 		CurrentTool: sess.CurrentTool,
 		Note:        note,
+		LastPrompt:  lastPrompt,
+		ToolHistory: toolHistory,
 		Width:       width,
 		Selected:    selected,
 	}
