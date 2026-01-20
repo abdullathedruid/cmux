@@ -43,6 +43,8 @@ type Client interface {
 	SupportsPopup() bool
 	// DisplayPopup opens a session in a tmux popup window.
 	DisplayPopup(name string) error
+	// GetCurrentSession returns the name of the current tmux session, or empty if not in tmux.
+	GetCurrentSession() string
 }
 
 // RealClient implements Client using actual tmux commands.
@@ -182,6 +184,20 @@ func (c *RealClient) HasSession(name string) bool {
 // IsInsideTmux returns true if we're running inside tmux.
 func (c *RealClient) IsInsideTmux() bool {
 	return os.Getenv("TMUX") != ""
+}
+
+// GetCurrentSession returns the name of the current tmux session, or empty if not in tmux.
+func (c *RealClient) GetCurrentSession() string {
+	if !c.IsInsideTmux() {
+		return ""
+	}
+	cmd := exec.Command("tmux", "display-message", "-p", "#S")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(stdout.String())
 }
 
 // CapturePane captures the pane output from a session.

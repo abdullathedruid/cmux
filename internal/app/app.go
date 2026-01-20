@@ -540,6 +540,12 @@ func (a *App) popupSession(name string) error {
 		return a.attachSession(name)
 	}
 
+	// Don't popup the same session we're currently in - causes recursive display issues
+	if a.tmux.GetCurrentSession() == name {
+		// Fall back to switch-client (effectively a no-op when same session)
+		return a.tmux.SwitchSession(name)
+	}
+
 	if !a.tmux.SupportsPopup() {
 		// Fall back to switch-client when popup not supported
 		return a.tmux.SwitchSession(name)
