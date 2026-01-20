@@ -205,57 +205,58 @@ func ReadTranscript(path string, maxTools int) (*TranscriptSummary, error) {
 }
 
 // GetToolSummary returns a human-readable summary of a tool call.
+// Format: ToolName(details) e.g., "Bash(git status)", "Edit(app.go)"
 func GetToolSummary(tc *ToolCall) string {
 	switch tc.Name {
 	case "Bash":
 		if tc.Input.Command != "" {
-			return "Running: " + truncate(tc.Input.Command, 100)
+			return "Bash(" + truncate(tc.Input.Command, 100) + ")"
 		}
-		return "Bash command"
+		return "Bash"
 	case "Read":
 		if tc.Input.FilePath != "" {
-			return "Reading " + baseName(tc.Input.FilePath)
+			return "Read(" + baseName(tc.Input.FilePath) + ")"
 		}
-		return "Reading file"
+		return "Read"
 	case "Edit":
 		if tc.Input.FilePath != "" {
-			return "Editing " + baseName(tc.Input.FilePath)
+			return "Edit(" + baseName(tc.Input.FilePath) + ")"
 		}
-		return "Editing file"
+		return "Edit"
 	case "Write":
 		if tc.Input.FilePath != "" {
-			return "Writing " + baseName(tc.Input.FilePath)
+			return "Write(" + baseName(tc.Input.FilePath) + ")"
 		}
-		return "Writing file"
+		return "Write"
 	case "Grep":
 		if tc.Input.Pattern != "" {
-			return "Searching: " + truncate(tc.Input.Pattern, 50)
+			return "Grep(" + truncate(tc.Input.Pattern, 50) + ")"
 		}
-		return "Searching"
+		return "Grep"
 	case "Glob":
 		if tc.Input.Pattern != "" {
-			return "Finding: " + truncate(tc.Input.Pattern, 50)
+			return "Glob(" + truncate(tc.Input.Pattern, 50) + ")"
 		}
-		return "Finding files"
+		return "Glob"
 	case "Task":
 		if tc.Input.TaskDescription != "" {
-			return "Agent: " + truncate(tc.Input.TaskDescription, 50)
+			return "Task(" + truncate(tc.Input.TaskDescription, 50) + ")"
 		}
-		return "Running agent"
+		return "Task"
 	case "WebFetch":
 		if tc.Input.URL != "" {
-			return "Fetching: " + truncate(tc.Input.URL, 50)
+			return "WebFetch(" + truncate(tc.Input.URL, 50) + ")"
 		}
-		return "Fetching URL"
+		return "WebFetch"
 	case "WebSearch":
 		if tc.Input.Query != "" {
-			return "Searching: " + truncate(tc.Input.Query, 50)
+			return "WebSearch(" + truncate(tc.Input.Query, 50) + ")"
 		}
-		return "Web search"
+		return "WebSearch"
 	case "TodoWrite":
-		return "Updating todos"
+		return "TodoWrite"
 	case "LSP":
-		return "LSP operation"
+		return "LSP"
 	default:
 		return tc.Name
 	}
