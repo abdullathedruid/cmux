@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-errors/errors"
 	"github.com/jesseduffield/gocui"
 
 	"github.com/abdullathedruid/cmux/internal/state"
@@ -100,7 +101,7 @@ func (c *SearchController) Layout(g *gocui.Gui) error {
 	y0 := (maxY - height) / 2
 
 	v, err := g.SetView(searchViewName, x0, y0, x0+width, y0+height, 0)
-	if err != nil && err != gocui.ErrUnknownView {
+	if err != nil && !errors.Is(err, gocui.ErrUnknownView) {
 		return err
 	}
 

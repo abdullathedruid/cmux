@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-errors/errors"
 	"github.com/jesseduffield/gocui"
 
 	"github.com/abdullathedruid/cmux/internal/git"
@@ -41,7 +42,7 @@ func (c *SessionsController) Layout(g *gocui.Gui) error {
 	}
 
 	v, err := g.SetView(sessionsViewName, 0, 0, splitX-1, maxY-2, 0)
-	if err != nil && err != gocui.ErrUnknownView {
+	if err != nil && !errors.Is(err, gocui.ErrUnknownView) {
 		return err
 	}
 	v.Title = " Sessions "
@@ -53,7 +54,7 @@ func (c *SessionsController) Layout(g *gocui.Gui) error {
 
 	// Details panel on the right
 	dv, err := g.SetView(detailsViewName, splitX, 0, maxX-1, maxY-2, 0)
-	if err != nil && err != gocui.ErrUnknownView {
+	if err != nil && !errors.Is(err, gocui.ErrUnknownView) {
 		return err
 	}
 	dv.Title = " Details "

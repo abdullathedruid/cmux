@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-errors/errors"
 	"github.com/jesseduffield/gocui"
 
 	"github.com/abdullathedruid/cmux/internal/git"
@@ -34,7 +35,7 @@ func (c *DashboardController) Layout(g *gocui.Gui) error {
 
 	// Main view takes most of the screen, leaving 1 line for status bar
 	v, err := g.SetView(dashboardViewName, 0, 0, maxX-1, maxY-2, 0)
-	if err != nil && err != gocui.ErrUnknownView {
+	if err != nil && !errors.Is(err, gocui.ErrUnknownView) {
 		return err
 	}
 	v.Title = " cmux "

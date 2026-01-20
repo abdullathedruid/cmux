@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-errors/errors"
 	"github.com/jesseduffield/gocui"
 
 	"github.com/abdullathedruid/cmux/internal/git"
@@ -138,7 +139,7 @@ func (c *WizardController) Layout(g *gocui.Gui) error {
 	y0 := (maxY - height) / 2
 
 	v, err := g.SetView(wizardViewName, x0, y0, x0+width, y0+height, 0)
-	if err != nil && err != gocui.ErrUnknownView {
+	if err != nil && !errors.Is(err, gocui.ErrUnknownView) {
 		return err
 	}
 
