@@ -18,6 +18,7 @@
 #     "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
 #     "Stop": [{"hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
 #     "SubagentStop": [{"hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
+#     "PermissionRequest": [{"matcher": "*", "hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}],
 #     "Notification": [{"matcher": "permission_prompt", "hooks": [{"type": "command", "command": "/path/to/cmux-status-hook.sh"}]}]
 #   }
 # }
@@ -53,7 +54,7 @@ case "$EVENT" in
         STATUS="idle"
         TOOL=""
         ;;
-    Notification)
+    Notification|PermissionRequest)
         STATUS="needs_input"
         TOOL=""
         ;;
