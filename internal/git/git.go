@@ -24,14 +24,17 @@ type Worktree struct {
 	IsMain bool // true if this is the main worktree
 }
 
-// FindRepoRoot finds the git repository root from the given path.
+// FindRepoRoot finds the main git repository root from the given path.
+// For worktrees, this returns the main repository root, not the worktree path.
 func FindRepoRoot(path string) (string, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("getting absolute path: %w", err)
 	}
 
-	cmd := exec.Command("git", "-C", absPath, "rev-parse", "--show-toplevel")
+	// Use --git-common-dir to get the common .git directory
+	// This returns the main repo's .git dir even when in a worktree
+	cmd := exec.Command("git", "-C", absPath, "rev-parse", "--git-common-dir")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -40,7 +43,20 @@ func FindRepoRoot(path string) (string, error) {
 		return "", fmt.Errorf("not a git repository: %s", absPath)
 	}
 
-	return strings.TrimSpace(stdout.String()), nil
+	gitDir := strings.TrimSpace(stdout.String())
+
+	// If gitDir is relative (like ".git"), we need to make it absolute
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(absPath, gitDir)
+	}
+
+	// Clean the path to resolve any ".." components
+	gitDir = filepath.Clean(gitDir)
+
+	// The repo root is the parent of the .git directory
+	repoRoot := filepath.Dir(gitDir)
+
+	return repoRoot, nil
 }
 
 // GetRepoInfo returns information about the repository containing the given path.
@@ -50,7 +66,8 @@ func GetRepoInfo(path string) (*RepoInfo, error) {
 		return nil, err
 	}
 
-	branch, err := GetCurrentBranch(root)
+	// Get branch from the original path (not root) to get the correct branch for worktrees
+	branch, err := GetCurrentBranch(path)
 	if err != nil {
 		branch = "unknown"
 	}
