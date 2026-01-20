@@ -327,25 +327,46 @@ func (a *App) setupKeybindings() error {
 
 // Handlers
 
+// isModalOpen returns true if any modal is currently visible.
+func (a *App) isModalOpen() bool {
+	return a.help.IsVisible() || a.worktree.IsVisible() ||
+		a.editor.IsVisible() || a.search.IsVisible() || a.wizard.IsVisible()
+}
+
 func (a *App) quitHandler(g *gocui.Gui, v *gocui.View) error {
+	if a.isModalOpen() {
+		return nil
+	}
 	return a.quit()
 }
 
 func (a *App) toggleViewHandler(g *gocui.Gui, v *gocui.View) error {
+	if a.isModalOpen() {
+		return nil
+	}
 	a.toggleView()
 	return nil
 }
 
 func (a *App) helpHandler(g *gocui.Gui, v *gocui.View) error {
+	if a.isModalOpen() {
+		return nil
+	}
 	a.showHelp()
 	return nil
 }
 
 func (a *App) worktreeHandler(g *gocui.Gui, v *gocui.View) error {
+	if a.isModalOpen() {
+		return nil
+	}
 	return a.worktree.Show(g)
 }
 
 func (a *App) editNoteHandler(g *gocui.Gui, v *gocui.View) error {
+	if a.isModalOpen() {
+		return nil
+	}
 	sess := a.state.GetSelectedSession()
 	if sess == nil {
 		return nil
@@ -354,10 +375,16 @@ func (a *App) editNoteHandler(g *gocui.Gui, v *gocui.View) error {
 }
 
 func (a *App) searchHandler(g *gocui.Gui, v *gocui.View) error {
+	if a.isModalOpen() {
+		return nil
+	}
 	return a.search.Show(g)
 }
 
 func (a *App) wizardHandler(g *gocui.Gui, v *gocui.View) error {
+	if a.isModalOpen() {
+		return nil
+	}
 	return a.wizard.Show(g)
 }
 
