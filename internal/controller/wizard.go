@@ -24,16 +24,37 @@ const (
 
 // WizardController manages the session creation wizard.
 type WizardController struct {
-	ctx           *Context
-	visible       bool
-	step          wizardStep
-	recentRepos   []string
-	selectedRepo  string
-	branches      []string
-	worktrees     []git.Worktree
-	selected      int
-	inputBuffer   string
-	createNew     bool // true = create new worktree, false = use existing
+	ctx          *Context
+	visible      bool
+	step         wizardStep
+	recentRepos  []string
+	selectedRepo string
+	branches     []string
+	worktrees    []git.Worktree
+	selected     int
+	inputBuffer  string
+	createNew    bool // true = create new worktree, false = use existing
+	gui          *gocui.Gui
+}
+
+// Edit handles key input for the wizard modal.
+func (c *WizardController) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
+	switch {
+	case key == gocui.KeyEsc:
+		c.back(c.gui, v)
+	case key == gocui.KeyEnter:
+		c.select_(c.gui, v)
+	case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
+		c.backspace(c.gui, v)
+	case key == gocui.KeyArrowDown || ch == 'j':
+		c.cursorDown(c.gui, v)
+	case key == gocui.KeyArrowUp || ch == 'k':
+		c.cursorUp(c.gui, v)
+	case ch != 0 && mod == gocui.ModNone && c.step == stepEnterBranchName:
+		// Only accept character input in branch name entry mode
+		c.inputBuffer += string(ch)
+		c.Render(c.gui)
+	}
 }
 
 // NewWizardController creates a new wizard controller.
@@ -58,6 +79,7 @@ func (c *WizardController) Show(g *gocui.Gui) error {
 	c.selected = 0
 	c.inputBuffer = ""
 	c.selectedRepo = ""
+	c.gui = g
 
 	// Gather recent repos from existing sessions
 	c.recentRepos = c.gatherRecentRepos()
@@ -116,6 +138,7 @@ func (c *WizardController) Layout(g *gocui.Gui) error {
 	v.Title = c.getTitle()
 	v.Wrap = false
 	v.Frame = true
+	v.Editable = true
 
 	// Set as top view
 	if err := g.SetCurrentView(wizardViewName); err != nil {
@@ -141,39 +164,8 @@ func (c *WizardController) getTitle() string {
 }
 
 // Keybindings sets up wizard keybindings.
+// Note: Key handling is done via the custom Editor interface instead.
 func (c *WizardController) Keybindings(g *gocui.Gui) error {
-	// Navigation
-	if err := g.SetKeybinding(wizardViewName, 'j', gocui.ModNone, c.cursorDown); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(wizardViewName, 'k', gocui.ModNone, c.cursorUp); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(wizardViewName, gocui.KeyArrowDown, gocui.ModNone, c.cursorDown); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(wizardViewName, gocui.KeyArrowUp, gocui.ModNone, c.cursorUp); err != nil {
-		return err
-	}
-
-	// Selection
-	if err := g.SetKeybinding(wizardViewName, gocui.KeyEnter, gocui.ModNone, c.select_); err != nil {
-		return err
-	}
-
-	// Cancel/Back
-	if err := g.SetKeybinding(wizardViewName, gocui.KeyEsc, gocui.ModNone, c.back); err != nil {
-		return err
-	}
-
-	// Backspace for text input
-	if err := g.SetKeybinding(wizardViewName, gocui.KeyBackspace, gocui.ModNone, c.backspace); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(wizardViewName, gocui.KeyBackspace2, gocui.ModNone, c.backspace); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -515,15 +507,6 @@ func (c *WizardController) back(g *gocui.Gui, v *gocui.View) error {
 func (c *WizardController) backspace(g *gocui.Gui, v *gocui.View) error {
 	if c.step == stepEnterBranchName && len(c.inputBuffer) > 0 {
 		c.inputBuffer = c.inputBuffer[:len(c.inputBuffer)-1]
-		return c.Render(g)
-	}
-	return nil
-}
-
-// HandleRune handles character input.
-func (c *WizardController) HandleRune(g *gocui.Gui, r rune) error {
-	if c.step == stepEnterBranchName {
-		c.inputBuffer += string(r)
 		return c.Render(g)
 	}
 	return nil

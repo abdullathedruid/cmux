@@ -16,6 +16,24 @@ type EditorController struct {
 	content     string
 	cursorPos   int
 	onSave      func(sessionName, content string) error
+	gui         *gocui.Gui
+}
+
+// Edit handles key input for the editor modal.
+func (c *EditorController) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
+	switch {
+	case key == gocui.KeyEsc:
+		c.cancel(c.gui, v)
+	case key == gocui.KeyCtrlS:
+		c.save(c.gui, v)
+	case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
+		c.backspace(c.gui, v)
+	case key == gocui.KeyEnter:
+		c.newline(c.gui, v)
+	case ch != 0 && mod == gocui.ModNone:
+		c.content += string(ch)
+		c.Render(c.gui)
+	}
 }
 
 // NewEditorController creates a new editor controller.
@@ -42,6 +60,7 @@ func (c *EditorController) Show(g *gocui.Gui, sessionName, currentNote string) e
 	c.content = currentNote
 	c.cursorPos = len(currentNote)
 	c.visible = true
+	c.gui = g
 	return c.Layout(g)
 }
 
@@ -84,28 +103,8 @@ func (c *EditorController) Layout(g *gocui.Gui) error {
 }
 
 // Keybindings sets up editor keybindings.
+// Note: Key handling is done via the custom Editor interface instead.
 func (c *EditorController) Keybindings(g *gocui.Gui) error {
-	// Save and close
-	if err := g.SetKeybinding(editorViewName, gocui.KeyCtrlS, gocui.ModNone, c.save); err != nil {
-		return err
-	}
-
-	// Cancel
-	if err := g.SetKeybinding(editorViewName, gocui.KeyEsc, gocui.ModNone, c.cancel); err != nil {
-		return err
-	}
-
-	// Character input
-	if err := g.SetKeybinding(editorViewName, gocui.KeyBackspace, gocui.ModNone, c.backspace); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(editorViewName, gocui.KeyBackspace2, gocui.ModNone, c.backspace); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(editorViewName, gocui.KeyEnter, gocui.ModNone, c.newline); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -154,9 +153,4 @@ func (c *EditorController) backspace(g *gocui.Gui, v *gocui.View) error {
 func (c *EditorController) newline(g *gocui.Gui, v *gocui.View) error {
 	c.content += "\n"
 	return c.Render(g)
-}
-
-// HandleRune handles character input.
-func (c *EditorController) HandleRune(r rune) {
-	c.content += string(r)
 }

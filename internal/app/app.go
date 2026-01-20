@@ -41,6 +41,28 @@ type App struct {
 	pendingAttach string
 }
 
+// appEditor implements gocui.Editor to handle input for modals.
+type appEditor struct {
+	app *App
+}
+
+func (e *appEditor) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
+	// Dispatch to the appropriate modal if visible
+	switch {
+	case e.app.editor.IsVisible():
+		e.app.editor.Edit(v, key, ch, mod)
+	case e.app.search.IsVisible():
+		e.app.search.Edit(v, key, ch, mod)
+	case e.app.wizard.IsVisible():
+		e.app.wizard.Edit(v, key, ch, mod)
+	case e.app.worktree.IsVisible():
+		e.app.worktree.Edit(v, key, ch, mod)
+	default:
+		// For non-modal views, use default editor behavior
+		gocui.DefaultEditor.Edit(v, key, ch, mod)
+	}
+}
+
 // New creates a new App.
 func New(cfg *config.Config) (*App, error) {
 	s := state.New()
@@ -94,6 +116,7 @@ func (a *App) initGui() error {
 	a.gui.SetLayout(a.layout)
 	a.gui.Mouse = false
 	a.gui.Cursor = false
+	a.gui.Editor = &appEditor{app: a}
 
 	// Set up keybindings
 	if err := a.setupKeybindings(); err != nil {

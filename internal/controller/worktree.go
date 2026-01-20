@@ -22,6 +22,7 @@ type WorktreeController struct {
 	selected    int
 	mode        worktreeMode
 	inputBuffer string
+	gui         *gocui.Gui
 }
 
 type worktreeMode int
@@ -31,6 +32,30 @@ const (
 	modeSelectBranch
 	modeCreateBranch
 )
+
+// Edit handles key input for the worktree modal.
+func (c *WorktreeController) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
+	switch {
+	case key == gocui.KeyEsc || ch == 'q':
+		c.close(c.gui, v)
+	case key == gocui.KeyEnter:
+		c.select_(c.gui, v)
+	case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
+		c.backspace(c.gui, v)
+	case key == gocui.KeyArrowDown || ch == 'j':
+		c.cursorDown(c.gui, v)
+	case key == gocui.KeyArrowUp || ch == 'k':
+		c.cursorUp(c.gui, v)
+	case ch == 'b' && c.mode == modeSelectWorktree:
+		c.showBranches(c.gui, v)
+	case ch == 'n' && (c.mode == modeSelectWorktree || c.mode == modeSelectBranch):
+		c.newBranch(c.gui, v)
+	case ch != 0 && mod == gocui.ModNone && c.mode == modeCreateBranch:
+		// Only accept character input in branch creation mode
+		c.inputBuffer += string(ch)
+		c.Render(c.gui)
+	}
+}
 
 // NewWorktreeController creates a new worktree controller.
 func NewWorktreeController(ctx *Context) *WorktreeController {
@@ -64,6 +89,7 @@ func (c *WorktreeController) Show(g *gocui.Gui) error {
 	c.selected = 0
 	c.mode = modeSelectWorktree
 	c.inputBuffer = ""
+	c.gui = g
 
 	// Load worktrees
 	worktrees, err := git.ListWorktrees(repoPath)
@@ -111,6 +137,7 @@ func (c *WorktreeController) Layout(g *gocui.Gui) error {
 	v.Title = c.getTitle()
 	v.Wrap = false
 	v.Frame = true
+	v.Editable = true
 
 	// Set as top view
 	if err := g.SetCurrentView(worktreeViewName); err != nil {
@@ -132,44 +159,8 @@ func (c *WorktreeController) getTitle() string {
 }
 
 // Keybindings sets up worktree picker keybindings.
+// Note: Key handling is done via the custom Editor interface instead.
 func (c *WorktreeController) Keybindings(g *gocui.Gui) error {
-	// Navigation
-	if err := g.SetKeybinding(worktreeViewName, 'j', gocui.ModNone, c.cursorDown); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(worktreeViewName, 'k', gocui.ModNone, c.cursorUp); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(worktreeViewName, gocui.KeyArrowDown, gocui.ModNone, c.cursorDown); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(worktreeViewName, gocui.KeyArrowUp, gocui.ModNone, c.cursorUp); err != nil {
-		return err
-	}
-
-	// Selection
-	if err := g.SetKeybinding(worktreeViewName, gocui.KeyEnter, gocui.ModNone, c.select_); err != nil {
-		return err
-	}
-
-	// New worktree from branch
-	if err := g.SetKeybinding(worktreeViewName, 'b', gocui.ModNone, c.showBranches); err != nil {
-		return err
-	}
-
-	// New worktree with new branch
-	if err := g.SetKeybinding(worktreeViewName, 'n', gocui.ModNone, c.newBranch); err != nil {
-		return err
-	}
-
-	// Close
-	if err := g.SetKeybinding(worktreeViewName, gocui.KeyEsc, gocui.ModNone, c.close); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(worktreeViewName, 'q', gocui.ModNone, c.close); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -338,6 +329,14 @@ func (c *WorktreeController) close(g *gocui.Gui, v *gocui.View) error {
 	default:
 		return c.Hide(g)
 	}
+}
+
+func (c *WorktreeController) backspace(g *gocui.Gui, v *gocui.View) error {
+	if c.mode == modeCreateBranch && len(c.inputBuffer) > 0 {
+		c.inputBuffer = c.inputBuffer[:len(c.inputBuffer)-1]
+		return c.Render(g)
+	}
+	return nil
 }
 
 func (c *WorktreeController) createSessionForWorktree(g *gocui.Gui, path, branch string) error {

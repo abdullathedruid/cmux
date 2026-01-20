@@ -13,12 +13,34 @@ const searchViewName = "search"
 
 // SearchController manages the search/filter functionality.
 type SearchController struct {
-	ctx         *Context
-	visible     bool
-	query       string
-	results     []*state.Session
-	selected    int
-	onSelect    func(sessionName string) error
+	ctx      *Context
+	visible  bool
+	query    string
+	results  []*state.Session
+	selected int
+	onSelect func(sessionName string) error
+	gui      *gocui.Gui
+}
+
+// Edit handles key input for the search modal.
+func (c *SearchController) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
+	switch {
+	case key == gocui.KeyEsc:
+		c.close(c.gui, v)
+	case key == gocui.KeyEnter:
+		c.selectResult(c.gui, v)
+	case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
+		c.backspace(c.gui, v)
+	case key == gocui.KeyArrowDown || key == gocui.KeyCtrlN:
+		c.cursorDown(c.gui, v)
+	case key == gocui.KeyArrowUp || key == gocui.KeyCtrlP:
+		c.cursorUp(c.gui, v)
+	case ch != 0 && mod == gocui.ModNone:
+		c.query += string(ch)
+		c.selected = 0
+		c.updateResults()
+		c.Render(c.gui)
+	}
 }
 
 // NewSearchController creates a new search controller.
@@ -44,6 +66,7 @@ func (c *SearchController) Show(g *gocui.Gui) error {
 	c.visible = true
 	c.query = ""
 	c.selected = 0
+	c.gui = g
 	c.updateResults()
 	return c.Layout(g)
 }
@@ -77,6 +100,7 @@ func (c *SearchController) Layout(g *gocui.Gui) error {
 	v.Title = " Search Sessions "
 	v.Wrap = false
 	v.Frame = true
+	v.Editable = true
 
 	// Set as top view
 	if err := g.SetCurrentView(searchViewName); err != nil {
@@ -87,39 +111,8 @@ func (c *SearchController) Layout(g *gocui.Gui) error {
 }
 
 // Keybindings sets up search keybindings.
+// Note: Key handling is done via the custom Editor interface instead.
 func (c *SearchController) Keybindings(g *gocui.Gui) error {
-	// Navigation
-	if err := g.SetKeybinding(searchViewName, gocui.KeyArrowDown, gocui.ModNone, c.cursorDown); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(searchViewName, gocui.KeyArrowUp, gocui.ModNone, c.cursorUp); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(searchViewName, gocui.KeyCtrlN, gocui.ModNone, c.cursorDown); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(searchViewName, gocui.KeyCtrlP, gocui.ModNone, c.cursorUp); err != nil {
-		return err
-	}
-
-	// Selection
-	if err := g.SetKeybinding(searchViewName, gocui.KeyEnter, gocui.ModNone, c.selectResult); err != nil {
-		return err
-	}
-
-	// Cancel
-	if err := g.SetKeybinding(searchViewName, gocui.KeyEsc, gocui.ModNone, c.close); err != nil {
-		return err
-	}
-
-	// Backspace
-	if err := g.SetKeybinding(searchViewName, gocui.KeyBackspace, gocui.ModNone, c.backspace); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(searchViewName, gocui.KeyBackspace2, gocui.ModNone, c.backspace); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -173,14 +166,6 @@ func (c *SearchController) Render(g *gocui.Gui) error {
 	fmt.Fprintln(v, " Enter: Select  Esc: Cancel")
 
 	return nil
-}
-
-// HandleRune handles character input for the search query.
-func (c *SearchController) HandleRune(g *gocui.Gui, r rune) error {
-	c.query += string(r)
-	c.selected = 0
-	c.updateResults()
-	return c.Render(g)
 }
 
 func (c *SearchController) updateResults() {
