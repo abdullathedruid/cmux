@@ -33,6 +33,8 @@ type App struct {
 	help      *controller.HelpController
 	worktree  *controller.WorktreeController
 	editor    *controller.EditorController
+	search    *controller.SearchController
+	wizard    *controller.WizardController
 
 	// State
 	suspended bool
@@ -80,6 +82,8 @@ func New(cfg *config.Config) (*App, error) {
 	app.help = controller.NewHelpController(ctx)
 	app.worktree = controller.NewWorktreeController(ctx)
 	app.editor = controller.NewEditorController(ctx, app.saveNote)
+	app.search = controller.NewSearchController(ctx, nil) // nil = just select, don't attach
+	app.wizard = controller.NewWizardController(ctx)
 
 	return app, nil
 }
@@ -171,6 +175,20 @@ func (a *App) layout(g *gocui.Gui) error {
 		}
 	}
 
+	// Search overlay (if visible)
+	if a.search.IsVisible() {
+		if err := a.search.Layout(g); err != nil {
+			return err
+		}
+	}
+
+	// Wizard overlay (if visible)
+	if a.wizard.IsVisible() {
+		if err := a.wizard.Layout(g); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -218,6 +236,16 @@ func (a *App) setupKeybindings() error {
 		return err
 	}
 
+	// Search
+	if err := a.gui.SetKeybinding("", '/', gocui.ModNone, a.searchHandler); err != nil {
+		return err
+	}
+
+	// Session wizard (Shift+N)
+	if err := a.gui.SetKeybinding("", 'N', gocui.ModNone, a.wizardHandler); err != nil {
+		return err
+	}
+
 	// Set up controller-specific keybindings
 	if err := a.dashboard.Keybindings(a.gui); err != nil {
 		return err
@@ -232,6 +260,12 @@ func (a *App) setupKeybindings() error {
 		return err
 	}
 	if err := a.editor.Keybindings(a.gui); err != nil {
+		return err
+	}
+	if err := a.search.Keybindings(a.gui); err != nil {
+		return err
+	}
+	if err := a.wizard.Keybindings(a.gui); err != nil {
 		return err
 	}
 
@@ -264,6 +298,14 @@ func (a *App) editNoteHandler(g *gocui.Gui, v *gocui.View) error {
 		return nil
 	}
 	return a.editor.Show(g, sess.Name, sess.Note)
+}
+
+func (a *App) searchHandler(g *gocui.Gui, v *gocui.View) error {
+	return a.search.Show(g)
+}
+
+func (a *App) wizardHandler(g *gocui.Gui, v *gocui.View) error {
+	return a.wizard.Show(g)
 }
 
 // Actions
