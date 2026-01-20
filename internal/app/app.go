@@ -279,6 +279,20 @@ func (a *App) setupKeybindings() error {
 		return fmt.Errorf("keybinding 'N': %w", err)
 	}
 
+	// Navigation keys (global to work around tcell keybinding issue)
+	if err := a.gui.SetKeybinding("", 'j', gocui.ModNone, a.cursorDownHandler); err != nil {
+		return fmt.Errorf("keybinding 'j': %w", err)
+	}
+	if err := a.gui.SetKeybinding("", 'k', gocui.ModNone, a.cursorUpHandler); err != nil {
+		return fmt.Errorf("keybinding 'k': %w", err)
+	}
+	if err := a.gui.SetKeybinding("", 'h', gocui.ModNone, a.cursorLeftHandler); err != nil {
+		return fmt.Errorf("keybinding 'h': %w", err)
+	}
+	if err := a.gui.SetKeybinding("", 'l', gocui.ModNone, a.cursorRightHandler); err != nil {
+		return fmt.Errorf("keybinding 'l': %w", err)
+	}
+
 	// Set up controller-specific keybindings
 	if err := a.dashboard.Keybindings(a.gui); err != nil {
 		return fmt.Errorf("dashboard.Keybindings: %w", err)
@@ -366,6 +380,40 @@ func (a *App) wizardHandler(g *gocui.Gui, v *gocui.View) error {
 		return nil
 	}
 	return a.wizard.Show(g)
+}
+
+func (a *App) cursorDownHandler(g *gocui.Gui, v *gocui.View) error {
+	if a.isModalOpen() {
+		return nil
+	}
+	a.state.SelectNext()
+	return a.render()
+}
+
+func (a *App) cursorUpHandler(g *gocui.Gui, v *gocui.View) error {
+	if a.isModalOpen() {
+		return nil
+	}
+	a.state.SelectPrev()
+	return a.render()
+}
+
+func (a *App) cursorLeftHandler(g *gocui.Gui, v *gocui.View) error {
+	if a.isModalOpen() {
+		return nil
+	}
+	// For now, left/right do the same as up/down in list navigation
+	// Could be used for horizontal grid navigation in future
+	a.state.SelectPrev()
+	return a.render()
+}
+
+func (a *App) cursorRightHandler(g *gocui.Gui, v *gocui.View) error {
+	if a.isModalOpen() {
+		return nil
+	}
+	a.state.SelectNext()
+	return a.render()
 }
 
 // Actions

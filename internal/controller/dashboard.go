@@ -46,14 +46,9 @@ func (c *DashboardController) Layout(g *gocui.Gui) error {
 }
 
 // Keybindings sets up dashboard-specific keybindings.
+// Note: j/k/h/l navigation is handled globally in app.go to work around tcell keybinding issues.
 func (c *DashboardController) Keybindings(g *gocui.Gui) error {
-	// Navigation
-	if err := g.SetKeybinding(dashboardViewName, 'j', gocui.ModNone, c.cursorDown); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding(dashboardViewName, 'k', gocui.ModNone, c.cursorUp); err != nil {
-		return err
-	}
+	// Arrow key navigation (special keys work fine with view-specific bindings)
 	if err := g.SetKeybinding(dashboardViewName, gocui.KeyArrowDown, gocui.ModNone, c.cursorDown); err != nil {
 		return err
 	}
