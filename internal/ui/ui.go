@@ -89,6 +89,7 @@ type Card struct {
 	ToolHistory []string // Recent tool summaries
 	Width       int
 	Selected    bool
+	BorderColor string // ANSI color code for the border based on status
 }
 
 // Render renders the card as a string slice (one per line).
@@ -103,6 +104,13 @@ func (c *Card) Render() []string {
 
 	lines := make([]string, 0, 7)
 
+	// Get border color (default to no color if not set)
+	borderColor := c.BorderColor
+	colorReset := ""
+	if borderColor != "" {
+		colorReset = ColorReset
+	}
+
 	// Top border
 	borderChar := "─"
 	corner := "┌"
@@ -112,7 +120,8 @@ func (c *Card) Render() []string {
 		endCorner = "┓"
 		borderChar = "━"
 	}
-	lines = append(lines, corner+c.Title+" "+strings.Repeat(borderChar, max(0, width-runewidth.StringWidth(c.Title)-3))+endCorner)
+	topBorder := corner + c.Title + " " + strings.Repeat(borderChar, max(0, width-runewidth.StringWidth(c.Title)-3)) + endCorner
+	lines = append(lines, borderColor+topBorder+colorReset)
 
 	// Status line with current tool if present
 	statusLine := fmt.Sprintf("%s %s", c.Icon, c.Status)
@@ -153,7 +162,8 @@ func (c *Card) Render() []string {
 		bottomEndCorner = "┛"
 		borderChar = "━"
 	}
-	lines = append(lines, bottomCorner+strings.Repeat(borderChar, width-2)+bottomEndCorner)
+	bottomBorder := bottomCorner + strings.Repeat(borderChar, width-2) + bottomEndCorner
+	lines = append(lines, borderColor+bottomBorder+colorReset)
 
 	return lines
 }
@@ -169,6 +179,10 @@ func (c *Card) borderLine(content string, innerWidth int) string {
 	if padding < 0 {
 		padding = 0
 		content = runewidth.Truncate(content, innerWidth, "")
+	}
+	// Apply border color if set
+	if c.BorderColor != "" {
+		return c.BorderColor + border + ColorReset + " " + content + strings.Repeat(" ", padding) + " " + c.BorderColor + border + ColorReset
 	}
 	return border + " " + content + strings.Repeat(" ", padding) + " " + border
 }

@@ -238,6 +238,7 @@ func (c *DashboardController) buildCard(sess *state.Session, width int, selected
 		ToolHistory: toolHistory,
 		Width:       width,
 		Selected:    selected,
+		BorderColor: ui.StatusColor(sess.Attached, sess.Status),
 	}
 }
 
