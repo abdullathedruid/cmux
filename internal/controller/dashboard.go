@@ -212,10 +212,12 @@ func (c *DashboardController) buildCard(sess *state.Session, width int, selected
 		}
 	}
 
-	// Build tool history (last 3 tool names)
+	// Build tool history (last 3 tool names with timestamps)
 	var toolHistory []string
 	for i := 0; i < len(sess.ToolHistory) && i < 3; i++ {
-		toolHistory = append(toolHistory, sess.ToolHistory[i].Tool)
+		entry := sess.ToolHistory[i]
+		ts := entry.Timestamp.Local().Format("15:04:05")
+		toolHistory = append(toolHistory, fmt.Sprintf("%s %s", ts, entry.Tool))
 	}
 
 	// Get last prompt (first line, truncated)

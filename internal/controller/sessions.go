@@ -252,7 +252,8 @@ func (c *SessionsController) renderDetails(g *gocui.Gui) error {
 			if entry.Result != "" {
 				result = " → " + entry.Result
 			}
-			line := fmt.Sprintf("    %s%s", entry.Summary, result)
+			ts := entry.Timestamp.Local().Format("15:04:05")
+			line := fmt.Sprintf("    %s %s%s", ts, entry.Summary, result)
 			fmt.Fprintln(v, ui.Truncate(line, maxLen+4))
 		}
 	}
