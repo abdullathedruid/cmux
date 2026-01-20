@@ -145,12 +145,12 @@ func (s *State) GetSessions() []*Session {
 		sessions = append(sessions, sess)
 	}
 
-	// Sort by repo, then name
+	// Sort by repo, then created time
 	sort.Slice(sessions, func(i, j int) bool {
 		if sessions[i].RepoName != sessions[j].RepoName {
 			return sessions[i].RepoName < sessions[j].RepoName
 		}
-		return sessions[i].Name < sessions[j].Name
+		return sessions[i].Created.Before(sessions[j].Created)
 	})
 
 	return sessions
@@ -252,7 +252,7 @@ func (s *State) SelectPrev() {
 	}
 }
 
-// getSortedSessionsLocked returns sessions sorted by repo then name (must be called with lock held).
+// getSortedSessionsLocked returns sessions sorted by repo then created time (must be called with lock held).
 func (s *State) getSortedSessionsLocked() []*Session {
 	sessions := make([]*Session, 0, len(s.sessions))
 	for _, sess := range s.sessions {
@@ -263,7 +263,7 @@ func (s *State) getSortedSessionsLocked() []*Session {
 		if sessions[i].RepoName != sessions[j].RepoName {
 			return sessions[i].RepoName < sessions[j].RepoName
 		}
-		return sessions[i].Name < sessions[j].Name
+		return sessions[i].Created.Before(sessions[j].Created)
 	})
 
 	return sessions
