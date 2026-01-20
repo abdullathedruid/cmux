@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/abdullathedruid/cmux/internal/state"
+	"github.com/mattn/go-runewidth"
 )
 
 // Colors and styles for the TUI
@@ -102,7 +103,7 @@ func (c *Card) Render() []string {
 		endCorner = "┓"
 		borderChar = "━"
 	}
-	lines = append(lines, corner+c.Title+" "+strings.Repeat(borderChar, max(0, width-len(c.Title)-3))+endCorner)
+	lines = append(lines, corner+c.Title+" "+strings.Repeat(borderChar, max(0, width-runewidth.StringWidth(c.Title)-3))+endCorner)
 
 	// Status line
 	statusLine := fmt.Sprintf("%s %s", c.Icon, c.Status)
@@ -137,48 +138,52 @@ func (c *Card) borderLine(content string, innerWidth int) string {
 	if c.Selected {
 		border = "┃"
 	}
-	padding := innerWidth - len(content)
+	contentWidth := runewidth.StringWidth(content)
+	padding := innerWidth - contentWidth
 	if padding < 0 {
 		padding = 0
-		content = content[:innerWidth]
+		content = runewidth.Truncate(content, innerWidth, "")
 	}
 	return border + " " + content + strings.Repeat(" ", padding) + " " + border
 }
 
 // truncate shortens a string to fit in the given width.
 func truncate(s string, width int) string {
-	if len(s) <= width {
+	if runewidth.StringWidth(s) <= width {
 		return s
 	}
 	if width <= 3 {
-		return s[:width]
+		return runewidth.Truncate(s, width, "")
 	}
-	return s[:width-3] + "..."
+	return runewidth.Truncate(s, width, "...")
 }
 
-// padRight pads a string to the right.
+// PadRight pads a string to the right.
 func PadRight(s string, width int) string {
-	if len(s) >= width {
-		return s[:width]
+	sw := runewidth.StringWidth(s)
+	if sw >= width {
+		return runewidth.Truncate(s, width, "")
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-sw)
 }
 
-// padLeft pads a string to the left.
+// PadLeft pads a string to the left.
 func PadLeft(s string, width int) string {
-	if len(s) >= width {
-		return s[:width]
+	sw := runewidth.StringWidth(s)
+	if sw >= width {
+		return runewidth.Truncate(s, width, "")
 	}
-	return strings.Repeat(" ", width-len(s)) + s
+	return strings.Repeat(" ", width-sw) + s
 }
 
 // Center centers a string in the given width.
 func Center(s string, width int) string {
-	if len(s) >= width {
-		return s[:width]
+	sw := runewidth.StringWidth(s)
+	if sw >= width {
+		return runewidth.Truncate(s, width, "")
 	}
-	padding := (width - len(s)) / 2
-	return strings.Repeat(" ", padding) + s + strings.Repeat(" ", width-len(s)-padding)
+	padding := (width - sw) / 2
+	return strings.Repeat(" ", padding) + s + strings.Repeat(" ", width-sw-padding)
 }
 
 // RenderStatusBar creates the bottom status bar content.
@@ -248,20 +253,33 @@ func WrapText(text string, width int) []string {
 
 	var lines []string
 	for _, line := range strings.Split(text, "\n") {
-		if len(line) <= width {
+		if runewidth.StringWidth(line) <= width {
 			lines = append(lines, line)
 			continue
 		}
 
 		// Wrap long lines
-		for len(line) > width {
-			// Find last space before width
-			idx := strings.LastIndex(line[:width], " ")
-			if idx == -1 {
-				idx = width
+		for runewidth.StringWidth(line) > width {
+			// Find a break point that fits within width
+			breakIdx := 0
+			currentWidth := 0
+			lastSpace := -1
+			for i, r := range line {
+				rw := runewidth.RuneWidth(r)
+				if currentWidth+rw > width {
+					break
+				}
+				currentWidth += rw
+				breakIdx = i + len(string(r))
+				if r == ' ' {
+					lastSpace = breakIdx
+				}
 			}
-			lines = append(lines, line[:idx])
-			line = strings.TrimSpace(line[idx:])
+			if lastSpace > 0 {
+				breakIdx = lastSpace
+			}
+			lines = append(lines, line[:breakIdx])
+			line = strings.TrimSpace(line[breakIdx:])
 		}
 		if line != "" {
 			lines = append(lines, line)

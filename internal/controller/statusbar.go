@@ -37,7 +37,7 @@ func (c *StatusBarController) Layout(g *gocui.Gui) error {
 	v.Frame = false
 	v.Wrap = false
 	v.BgColor = gocui.ColorBlue
-	v.FgColor = gocui.ColorWhite
+	v.FgColor = gocui.ColorWhite | gocui.AttrBold
 
 	return nil
 }
