@@ -12,6 +12,7 @@ import (
 	"github.com/abdullathedruid/cmux/internal/config"
 	"github.com/abdullathedruid/cmux/internal/controller"
 	"github.com/abdullathedruid/cmux/internal/git"
+	"github.com/abdullathedruid/cmux/internal/notes"
 	"github.com/abdullathedruid/cmux/internal/state"
 	"github.com/abdullathedruid/cmux/internal/tmux"
 )
@@ -22,6 +23,7 @@ type App struct {
 	config *config.Config
 	state  *state.State
 	tmux   tmux.Client
+	notes  *notes.Store
 	ctx    *controller.Context
 
 	// Controllers
@@ -29,6 +31,7 @@ type App struct {
 	sessions  *controller.SessionsController
 	statusBar *controller.StatusBarController
 	help      *controller.HelpController
+	worktree  *controller.WorktreeController
 
 	// State
 	suspended bool
@@ -43,13 +46,20 @@ func New(cfg *config.Config) (*App, error) {
 
 	s := state.New()
 	t := tmux.NewClient(cfg.ClaudeCommand)
+	n := notes.NewStore(cfg.NotesFile())
 	ctx := controller.NewContext(s, t)
+
+	// Load existing notes
+	if err := n.Load(); err != nil {
+		// Non-fatal, continue without notes
+	}
 
 	app := &App{
 		gui:    g,
 		config: cfg,
 		state:  s,
 		tmux:   t,
+		notes:  n,
 		ctx:    ctx,
 	}
 
@@ -67,6 +77,7 @@ func New(cfg *config.Config) (*App, error) {
 	app.sessions = controller.NewSessionsController(ctx)
 	app.statusBar = controller.NewStatusBarController(ctx)
 	app.help = controller.NewHelpController(ctx)
+	app.worktree = controller.NewWorktreeController(ctx)
 
 	return app, nil
 }
@@ -144,6 +155,13 @@ func (a *App) layout(g *gocui.Gui) error {
 		}
 	}
 
+	// Worktree picker overlay (if visible)
+	if a.worktree.IsVisible() {
+		if err := a.worktree.Layout(g); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -181,6 +199,11 @@ func (a *App) setupKeybindings() error {
 		return err
 	}
 
+	// Worktree picker
+	if err := a.gui.SetKeybinding("", 'w', gocui.ModNone, a.worktreeHandler); err != nil {
+		return err
+	}
+
 	// Set up controller-specific keybindings
 	if err := a.dashboard.Keybindings(a.gui); err != nil {
 		return err
@@ -189,6 +212,9 @@ func (a *App) setupKeybindings() error {
 		return err
 	}
 	if err := a.help.Keybindings(a.gui); err != nil {
+		return err
+	}
+	if err := a.worktree.Keybindings(a.gui); err != nil {
 		return err
 	}
 
@@ -209,6 +235,10 @@ func (a *App) toggleViewHandler(g *gocui.Gui, v *gocui.View) error {
 func (a *App) helpHandler(g *gocui.Gui, v *gocui.View) error {
 	a.showHelp()
 	return nil
+}
+
+func (a *App) worktreeHandler(g *gocui.Gui, v *gocui.View) error {
+	return a.worktree.Show(g)
 }
 
 // Actions
@@ -236,6 +266,8 @@ func (a *App) refresh() error {
 	sessions := make([]*state.Session, 0, len(tmuxSessions))
 	for _, ts := range tmuxSessions {
 		sess := a.convertSession(ts)
+		// Load note for this session
+		sess.Note = a.notes.Get(sess.Name)
 		sessions = append(sessions, sess)
 	}
 
