@@ -64,9 +64,9 @@ func TestTruncate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := truncate(tt.s, tt.width)
+		got := Truncate(tt.s, tt.width)
 		if got != tt.want {
-			t.Errorf("truncate(%q, %d) = %q, want %q", tt.s, tt.width, got, tt.want)
+			t.Errorf("Truncate(%q, %d) = %q, want %q", tt.s, tt.width, got, tt.want)
 		}
 	}
 }

@@ -414,7 +414,7 @@ func (a *App) convertSession(ts tmux.Session) *state.Session {
 	}
 
 	// Read status from hook-written file
-	if statusStr, tool, lastActive, found := status.ReadStatus(ts.Name); found {
+	if statusStr, tool, summary, lastActive, found := status.ReadStatus(ts.Name); found {
 		switch statusStr {
 		case "tool":
 			sess.Status = state.StatusTool
@@ -426,6 +426,7 @@ func (a *App) convertSession(ts tmux.Session) *state.Session {
 			sess.Status = state.StatusIdle
 		}
 		sess.CurrentTool = tool
+		sess.ToolSummary = summary
 		sess.LastActive = lastActive
 	}
 

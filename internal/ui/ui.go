@@ -122,7 +122,7 @@ func (c *Card) Render() []string {
 
 	// Note line (if present)
 	if c.Note != "" {
-		lines = append(lines, c.borderLine(truncate(c.Note, innerWidth), innerWidth))
+		lines = append(lines, c.borderLine(Truncate(c.Note, innerWidth), innerWidth))
 	} else {
 		lines = append(lines, c.borderLine("", innerWidth))
 	}
@@ -155,8 +155,8 @@ func (c *Card) borderLine(content string, innerWidth int) string {
 	return border + " " + content + strings.Repeat(" ", padding) + " " + border
 }
 
-// truncate shortens a string to fit in the given width.
-func truncate(s string, width int) string {
+// Truncate shortens a string to fit in the given width.
+func Truncate(s string, width int) string {
 	if runewidth.StringWidth(s) <= width {
 		return s
 	}

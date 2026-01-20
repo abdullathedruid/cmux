@@ -180,6 +180,16 @@ func (c *DashboardController) buildCard(sess *state.Session, width int, selected
 	icon := ui.StatusIcon(sess.Attached, sess.Status)
 	status := ui.StatusText(sess.Attached, sess.Status)
 
+	// Show tool summary instead of generic status when available
+	// Truncate to fit card width (leave room for icon and padding)
+	if sess.ToolSummary != "" {
+		maxLen := width - 8 // account for borders, padding, icon
+		if maxLen < 20 {
+			maxLen = 20
+		}
+		status = ui.Truncate(sess.ToolSummary, maxLen)
+	}
+
 	// Format last active time
 	lastActive := ""
 	if !sess.LastActive.IsZero() {

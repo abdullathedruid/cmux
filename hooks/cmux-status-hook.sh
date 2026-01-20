@@ -4,6 +4,8 @@
 # This script is called by Claude Code hooks and writes status updates
 # to a file that cmux reads to display session status.
 #
+# Requirements: jq
+#
 # Installation:
 # 1. Copy this script to a location in your PATH, or note its full path
 # 2. Make it executable: chmod +x cmux-status-hook.sh
@@ -34,34 +36,89 @@ fi
 # Read hook input from stdin
 INPUT=$(cat)
 
-# Extract event type and tool name using basic string parsing
-# (avoiding jq dependency for portability)
-EVENT=$(echo "$INPUT" | grep -o '"hook_event_name":"[^"]*"' | cut -d'"' -f4)
-TOOL=$(echo "$INPUT" | grep -o '"tool_name":"[^"]*"' | cut -d'"' -f4)
+# Parse with jq
+EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
+TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
+
+# Build summary based on tool type (no truncation - CLI handles display)
+SUMMARY=""
+case "$TOOL" in
+    Read)
+        FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
+        [ -n "$FILE" ] && SUMMARY="Reading ${FILE##*/}"
+        ;;
+    Edit)
+        FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
+        [ -n "$FILE" ] && SUMMARY="Editing ${FILE##*/}"
+        ;;
+    Write)
+        FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
+        [ -n "$FILE" ] && SUMMARY="Writing ${FILE##*/}"
+        ;;
+    Bash)
+        CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+        [ -n "$CMD" ] && SUMMARY="Running: $CMD"
+        ;;
+    Grep)
+        PATTERN=$(echo "$INPUT" | jq -r '.tool_input.pattern // empty')
+        [ -n "$PATTERN" ] && SUMMARY="Searching: $PATTERN"
+        ;;
+    Glob)
+        PATTERN=$(echo "$INPUT" | jq -r '.tool_input.pattern // empty')
+        [ -n "$PATTERN" ] && SUMMARY="Finding: $PATTERN"
+        ;;
+    Task)
+        DESC=$(echo "$INPUT" | jq -r '.tool_input.description // empty')
+        [ -n "$DESC" ] && SUMMARY="Agent: $DESC"
+        ;;
+    WebFetch)
+        URL=$(echo "$INPUT" | jq -r '.tool_input.url // empty')
+        [ -n "$URL" ] && SUMMARY="Fetching: $URL"
+        ;;
+    WebSearch)
+        QUERY=$(echo "$INPUT" | jq -r '.tool_input.query // empty')
+        [ -n "$QUERY" ] && SUMMARY="Searching: $QUERY"
+        ;;
+    TodoWrite)
+        SUMMARY="Updating todos"
+        ;;
+    LSP)
+        OP=$(echo "$INPUT" | jq -r '.tool_input.operation // empty')
+        FILE=$(echo "$INPUT" | jq -r '.tool_input.filePath // empty')
+        if [ -n "$OP" ] && [ -n "$FILE" ]; then
+            SUMMARY="LSP $OP: ${FILE##*/}"
+        elif [ -n "$OP" ]; then
+            SUMMARY="LSP: $OP"
+        fi
+        ;;
+    *)
+        [ -n "$TOOL" ] && SUMMARY="$TOOL"
+        ;;
+esac
 
 # Determine status based on event
 case "$EVENT" in
     PreToolUse)
         STATUS="tool"
         ;;
-    PostToolUse)
-        STATUS="active"  # Stay active between tool calls
-        TOOL=""
-        ;;
-    Stop|SubagentStop)
-        STATUS="idle"    # Only idle when Claude finishes responding
-        TOOL=""
-        ;;
-    UserPromptSubmit)
+    PostToolUse|Stop|SubagentStop|UserPromptSubmit)
         STATUS="active"
+        [ "$EVENT" = "Stop" ] || [ "$EVENT" = "SubagentStop" ] && STATUS="idle"
         TOOL=""
+        SUMMARY=""
         ;;
     *)
         STATUS="active"
         TOOL=""
+        SUMMARY=""
         ;;
 esac
 
-# Write status file
-TS=$(date +%s)
-echo "{\"status\":\"$STATUS\",\"tool\":\"$TOOL\",\"ts\":$TS}" > "$DIR/$SESSION.status"
+# Write status file as JSON
+jq -n \
+    --arg status "$STATUS" \
+    --arg tool "$TOOL" \
+    --arg summary "$SUMMARY" \
+    --argjson ts "$(date +%s)" \
+    '{status: $status, tool: $tool, summary: $summary, ts: $ts}' \
+    > "$DIR/$SESSION.status"

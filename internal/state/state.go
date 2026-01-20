@@ -40,6 +40,7 @@ type Session struct {
 	Attached    bool          // currently attached
 	Status      SessionStatus // P2: idle, active, tool, thinking
 	CurrentTool string        // P2: current tool being used
+	ToolSummary string        // one-line summary of what the tool is doing
 	Created     time.Time
 	LastActive  time.Time
 	Note        string

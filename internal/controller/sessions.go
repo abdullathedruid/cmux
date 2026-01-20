@@ -196,6 +196,16 @@ func (c *SessionsController) renderDetails(g *gocui.Gui) error {
 	}
 	fmt.Fprintf(v, "  Status:   %s\n", statusText)
 
+	// Tool summary (shown when using a tool)
+	if sess.ToolSummary != "" {
+		width, _ := v.Size()
+		maxLen := width - 14 // "  Activity: " prefix + margin
+		if maxLen < 20 {
+			maxLen = 20
+		}
+		fmt.Fprintf(v, "  Activity: %s\n", ui.Truncate(sess.ToolSummary, maxLen))
+	}
+
 	// Created time
 	if !sess.Created.IsZero() {
 		fmt.Fprintf(v, "  Created:  %s\n", sess.Created.Format("2006-01-02 15:04"))

@@ -16,24 +16,25 @@ func StatusDir() string {
 
 // FileStatus represents the status written by the hook script.
 type FileStatus struct {
-	Status string `json:"status"`
-	Tool   string `json:"tool,omitempty"`
-	TS     int64  `json:"ts"`
+	Status  string `json:"status"`
+	Tool    string `json:"tool,omitempty"`
+	Summary string `json:"summary,omitempty"`
+	TS      int64  `json:"ts"`
 }
 
 // ReadStatus reads the status for a given tmux session name.
-// Returns the status string, current tool (if any), last active time, and whether the status was found.
-func ReadStatus(sessionName string) (status string, tool string, lastActive time.Time, found bool) {
+// Returns the status string, current tool (if any), tool summary, last active time, and whether the status was found.
+func ReadStatus(sessionName string) (status string, tool string, summary string, lastActive time.Time, found bool) {
 	statusFile := filepath.Join(StatusDir(), sessionName+".status")
 
 	data, err := os.ReadFile(statusFile)
 	if err != nil {
-		return "idle", "", time.Time{}, false
+		return "idle", "", "", time.Time{}, false
 	}
 
 	var fs FileStatus
 	if err := json.Unmarshal(data, &fs); err != nil {
-		return "idle", "", time.Time{}, false
+		return "idle", "", "", time.Time{}, false
 	}
 
 	// Convert timestamp to time.Time
@@ -45,11 +46,11 @@ func ReadStatus(sessionName string) (status string, tool string, lastActive time
 	if fs.TS > 0 {
 		age := time.Now().Unix() - fs.TS
 		if age > 30 {
-			return "idle", "", lastActive, true
+			return "idle", "", "", lastActive, true
 		}
 	}
 
-	return fs.Status, fs.Tool, lastActive, true
+	return fs.Status, fs.Tool, fs.Summary, lastActive, true
 }
 
 // CleanupStatus removes the status file for a session.
