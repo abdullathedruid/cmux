@@ -108,7 +108,9 @@ func (c *DashboardController) Render(g *gocui.Gui) error {
 	if cardsPerRow > 3 {
 		cardsPerRow = 3 // Max 3 cards per row
 	}
-	cardWidth = (width - 4) / cardsPerRow
+	// Account for: 2-space left margin + 2-space gaps between cards
+	// Total margin = 2 + 2*(cardsPerRow-1) = 2*cardsPerRow
+	cardWidth = (width - 2*cardsPerRow) / cardsPerRow
 
 	for _, repo := range repos {
 		// Repository header
