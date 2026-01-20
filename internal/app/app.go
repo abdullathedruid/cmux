@@ -14,6 +14,7 @@ import (
 	"github.com/abdullathedruid/cmux/internal/git"
 	"github.com/abdullathedruid/cmux/internal/notes"
 	"github.com/abdullathedruid/cmux/internal/state"
+	"github.com/abdullathedruid/cmux/internal/status"
 	"github.com/abdullathedruid/cmux/internal/tmux"
 )
 
@@ -354,6 +355,21 @@ func (a *App) convertSession(ts tmux.Session) *state.Session {
 		Status:   state.StatusIdle,
 	}
 
+	// Read status from hook-written file
+	if statusStr, tool, found := status.ReadStatus(ts.Name); found {
+		switch statusStr {
+		case "tool":
+			sess.Status = state.StatusTool
+		case "active":
+			sess.Status = state.StatusActive
+		case "thinking":
+			sess.Status = state.StatusThinking
+		default:
+			sess.Status = state.StatusIdle
+		}
+		sess.CurrentTool = tool
+	}
+
 	// Try to get git info from the session path
 	if ts.Path != "" {
 		if info, err := git.GetRepoInfo(ts.Path); err == nil {
@@ -450,8 +466,9 @@ func (a *App) deleteSession(name string) error {
 	if err := a.tmux.KillSession(name); err != nil {
 		return err
 	}
-	// Also delete the note
+	// Also delete the note and status file
 	a.notes.Delete(name)
+	status.CleanupStatus(name)
 	return a.refresh()
 }
 
