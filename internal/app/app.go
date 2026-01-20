@@ -37,17 +37,12 @@ type App struct {
 	search    *controller.SearchController
 	wizard    *controller.WizardController
 
-	// State
-	suspended bool
+	// Pending attach - when set, main loop exits and attaches to this session
+	pendingAttach string
 }
 
 // New creates a new App.
 func New(cfg *config.Config) (*App, error) {
-	g := gocui.NewGui()
-	if err := g.Init(); err != nil {
-		return nil, fmt.Errorf("initializing gui: %w", err)
-	}
-
 	s := state.New()
 	t := tmux.NewClient(cfg.ClaudeCommand)
 	n := notes.NewStore(cfg.NotesFile())
@@ -59,7 +54,6 @@ func New(cfg *config.Config) (*App, error) {
 	}
 
 	app := &App{
-		gui:    g,
 		config: cfg,
 		state:  s,
 		tmux:   t,
@@ -89,34 +83,66 @@ func New(cfg *config.Config) (*App, error) {
 	return app, nil
 }
 
-// Run runs the application.
-func (a *App) Run() error {
-	defer a.gui.Close()
+// initGui initializes or reinitializes the gocui GUI.
+func (a *App) initGui() error {
+	g := gocui.NewGui()
+	if err := g.Init(); err != nil {
+		return fmt.Errorf("initializing gui: %w", err)
+	}
 
-	// Set up GUI
+	a.gui = g
 	a.gui.SetLayout(a.layout)
 	a.gui.Mouse = false
 	a.gui.Cursor = false
 
-	// Set up global keybindings
+	// Set up keybindings
 	if err := a.setupKeybindings(); err != nil {
-		return err
-	}
-
-	// Initial refresh
-	if err := a.refresh(); err != nil {
-		return err
-	}
-
-	// Start background refresh
-	go a.backgroundRefresh()
-
-	// Run main loop
-	if err := a.gui.MainLoop(); err != nil && err != gocui.ErrQuit {
+		a.gui.Close()
 		return err
 	}
 
 	return nil
+}
+
+// Run runs the application.
+func (a *App) Run() error {
+	for {
+		// Initialize or reinitialize GUI
+		if err := a.initGui(); err != nil {
+			return err
+		}
+
+		// Initial refresh
+		if err := a.refresh(); err != nil {
+			a.gui.Close()
+			return err
+		}
+
+		// Start background refresh
+		stopRefresh := make(chan struct{})
+		go a.backgroundRefresh(stopRefresh)
+
+		// Run main loop
+		err := a.gui.MainLoop()
+		close(stopRefresh)
+		a.gui.Close()
+
+		// Check if we need to attach to a session
+		if a.pendingAttach != "" {
+			name := a.pendingAttach
+			a.pendingAttach = ""
+			// This blocks until the user detaches
+			a.tmux.AttachSession(name)
+			// Loop back to reinitialize GUI
+			continue
+		}
+
+		// Normal exit
+		if err == nil || err == gocui.ErrQuit {
+			return nil
+		}
+		return err
+	}
 }
 
 // layout is the gocui manager function.
@@ -402,18 +428,10 @@ func (a *App) attachSession(name string) error {
 		return a.tmux.SwitchSession(name)
 	}
 
-	// Suspend the TUI and attach
-	a.gui.Close()
-	a.suspended = true
-
-	// Attach to the session
-	err := a.tmux.AttachSession(name)
-
-	// When we return (on detach), we need to restart
-	// For now, just exit - the user can run cmux again
-	os.Exit(0)
-
-	return err
+	// Set pending attach and exit main loop
+	// The Run() loop will handle the actual attach and reinitialize after detach
+	a.pendingAttach = name
+	return gocui.ErrQuit
 }
 
 func (a *App) newSession() error {
@@ -482,20 +500,22 @@ func (a *App) saveNote(sessionName, content string) error {
 	return nil
 }
 
-func (a *App) backgroundRefresh() {
+func (a *App) backgroundRefresh(stop <-chan struct{}) {
 	ticker := time.NewTicker(time.Duration(a.config.RefreshInterval) * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if a.suspended {
+	for {
+		select {
+		case <-stop:
 			return
+		case <-ticker.C:
+			a.gui.Execute(func(g *gocui.Gui) error {
+				if err := a.refresh(); err != nil {
+					return nil // Don't crash on refresh errors
+				}
+				return a.render()
+			})
 		}
-		a.gui.Execute(func(g *gocui.Gui) error {
-			if err := a.refresh(); err != nil {
-				return nil // Don't crash on refresh errors
-			}
-			return a.render()
-		})
 	}
 }
 
