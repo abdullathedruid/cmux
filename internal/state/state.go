@@ -173,10 +173,17 @@ func (s *State) GetRepositories() []*Repository {
 		repos = append(repos, repo)
 	}
 
-	// Sort by name
+	// Sort repos by name
 	sort.Slice(repos, func(i, j int) bool {
 		return repos[i].Name < repos[j].Name
 	})
+
+	// Sort each repo's sessions by created time to match navigation order
+	for _, repo := range repos {
+		sort.Slice(repo.Sessions, func(i, j int) bool {
+			return repo.Sessions[i].Created.Before(repo.Sessions[j].Created)
+		})
+	}
 
 	return repos
 }
@@ -220,7 +227,7 @@ func (s *State) SelectFirst() {
 	}
 }
 
-// SelectNext moves selection to the next session.
+// SelectNext moves selection to the next session (wraps around to first).
 func (s *State) SelectNext() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -233,10 +240,13 @@ func (s *State) SelectNext() {
 	idx := s.findSessionIndex(sessions, s.selectedSession)
 	if idx < len(sessions)-1 {
 		s.selectedSession = sessions[idx+1].Name
+	} else {
+		// Wrap around to first session
+		s.selectedSession = sessions[0].Name
 	}
 }
 
-// SelectPrev moves selection to the previous session.
+// SelectPrev moves selection to the previous session (wraps around to last).
 func (s *State) SelectPrev() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -249,6 +259,9 @@ func (s *State) SelectPrev() {
 	idx := s.findSessionIndex(sessions, s.selectedSession)
 	if idx > 0 {
 		s.selectedSession = sessions[idx-1].Name
+	} else {
+		// Wrap around to last session
+		s.selectedSession = sessions[len(sessions)-1].Name
 	}
 }
 
