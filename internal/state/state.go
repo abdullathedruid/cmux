@@ -173,10 +173,17 @@ func (s *State) GetRepositories() []*Repository {
 		repos = append(repos, repo)
 	}
 
-	// Sort by name
+	// Sort repos by name
 	sort.Slice(repos, func(i, j int) bool {
 		return repos[i].Name < repos[j].Name
 	})
+
+	// Sort each repo's sessions by created time to match navigation order
+	for _, repo := range repos {
+		sort.Slice(repo.Sessions, func(i, j int) bool {
+			return repo.Sessions[i].Created.Before(repo.Sessions[j].Created)
+		})
+	}
 
 	return repos
 }
