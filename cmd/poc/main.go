@@ -16,8 +16,8 @@ import (
 	"syscall"
 
 	"github.com/creack/pty"
-	"github.com/hinshun/vt10x"
 	"github.com/jesseduffield/gocui"
+	"github.com/vito/midterm"
 )
 
 // ControlMode manages a tmux -CC connection.
@@ -28,6 +28,12 @@ type ControlMode struct {
 	outputCh chan []byte
 	doneCh   chan struct{}
 	mu       sync.Mutex
+}
+
+// SafeTerminal wraps midterm.Terminal with a mutex for thread safety.
+type SafeTerminal struct {
+	*midterm.Terminal
+	mu sync.Mutex
 }
 
 // outputPattern matches "%output %<pane-id> <data>" lines.
@@ -232,7 +238,7 @@ func main() {
 	if termHeight < 1 {
 		termHeight = 24
 	}
-	term := vt10x.New(vt10x.WithSize(termWidth, termHeight))
+	term := &SafeTerminal{Terminal: midterm.NewTerminal(termHeight, termWidth)}
 
 	// Create control mode connection
 	ctrl := NewControlMode(session)
@@ -245,7 +251,9 @@ func main() {
 	// Process output goroutine
 	go func() {
 		for data := range ctrl.outputCh {
+			term.mu.Lock()
 			term.Write(data)
+			term.mu.Unlock()
 			g.Update(func(g *gocui.Gui) error { return nil })
 		}
 	}()
@@ -276,7 +284,7 @@ func main() {
 	}
 }
 
-func layoutFunc(term vt10x.Terminal, title string, ctrl *ControlMode) func(*gocui.Gui) error {
+func layoutFunc(term *SafeTerminal, title string, ctrl *ControlMode) func(*gocui.Gui) error {
 	firstCall := true
 	lastWidth, lastHeight := 0, 0
 	return func(g *gocui.Gui) error {
@@ -287,7 +295,9 @@ func layoutFunc(term vt10x.Terminal, title string, ctrl *ControlMode) func(*gocu
 		// Handle resize
 		if termWidth != lastWidth || termHeight != lastHeight {
 			if termWidth > 0 && termHeight > 0 {
-				term.Resize(termWidth, termHeight)
+				term.mu.Lock()
+				term.Resize(termHeight, termWidth) // midterm uses (rows, cols)
+				term.mu.Unlock()
 				ctrl.Resize(termWidth, termHeight)
 				lastWidth, lastHeight = termWidth, termHeight
 			}
@@ -321,10 +331,10 @@ func layoutFunc(term vt10x.Terminal, title string, ctrl *ControlMode) func(*gocu
 		renderTerminal(v, term)
 
 		// Set cursor position
-		term.Lock()
-		cursor := term.Cursor()
-		cursorVisible := term.CursorVisible()
-		term.Unlock()
+		term.mu.Lock()
+		cursor := term.Cursor
+		cursorVisible := term.CursorVisible
+		term.mu.Unlock()
 
 		if cursorVisible {
 			v.SetCursor(cursor.X, cursor.Y)
@@ -337,123 +347,26 @@ func layoutFunc(term vt10x.Terminal, title string, ctrl *ControlMode) func(*gocu
 	}
 }
 
-// Attribute flags from vt10x (internal constants)
-const (
-	attrReverse   = 1 << 0
-	attrUnderline = 1 << 1
-	attrBold      = 1 << 2
-	attrItalic    = 1 << 3
-	attrBlink     = 1 << 4
-)
+func renderTerminal(v *gocui.View, term *SafeTerminal) {
+	// Recover from panics during resize race conditions
+	defer func() {
+		if r := recover(); r != nil {
+			// Silently ignore - will redraw on next update
+		}
+	}()
 
-func renderTerminal(v *gocui.View, term vt10x.Terminal) {
-	term.Lock()
-	defer term.Unlock()
+	term.mu.Lock()
+	defer term.mu.Unlock()
 
-	width, height := term.Size()
+	if term.Height <= 0 || term.Width <= 0 {
+		return
+	}
 
 	var sb strings.Builder
-	var lastFG, lastBG vt10x.Color = vt10x.DefaultFG, vt10x.DefaultBG
-	var lastMode int16 = 0
-
-	for y := range height {
-		for x := range width {
-			cell := term.Cell(x, y)
-
-			// Check if style changed
-			if cell.FG != lastFG || cell.BG != lastBG || cell.Mode != lastMode {
-				// Reset and apply new style
-				sb.WriteString("\033[0m")
-				writeStyle(&sb, cell.FG, cell.BG, cell.Mode)
-				lastFG, lastBG, lastMode = cell.FG, cell.BG, cell.Mode
-			}
-
-			if cell.Char == 0 {
-				sb.WriteRune(' ')
-			} else {
-				sb.WriteRune(cell.Char)
-			}
-		}
-		// Reset at end of line and add newline
-		sb.WriteString("\033[0m")
-		lastFG, lastBG, lastMode = vt10x.DefaultFG, vt10x.DefaultBG, 0
-		if y < height-1 {
-			sb.WriteRune('\n')
-		}
+	if err := term.Render(&sb); err != nil {
+		return
 	}
 	fmt.Fprint(v, sb.String())
-}
-
-func writeStyle(sb *strings.Builder, fg, bg vt10x.Color, mode int16) {
-	// Write attributes
-	if mode&attrBold != 0 {
-		sb.WriteString("\033[1m")
-	}
-	if mode&attrItalic != 0 {
-		sb.WriteString("\033[3m")
-	}
-	if mode&attrUnderline != 0 {
-		sb.WriteString("\033[4m")
-	}
-	if mode&attrBlink != 0 {
-		sb.WriteString("\033[5m")
-	}
-	if mode&attrReverse != 0 {
-		sb.WriteString("\033[7m")
-	}
-
-	// Write foreground color
-	writeFGColor(sb, fg)
-
-	// Write background color
-	writeBGColor(sb, bg)
-}
-
-func writeFGColor(sb *strings.Builder, c vt10x.Color) {
-	// Skip default colors
-	if c == vt10x.DefaultFG || c == vt10x.DefaultBG {
-		return
-	}
-	if c < 8 {
-		// Standard ANSI colors 0-7
-		fmt.Fprintf(sb, "\033[%dm", 30+c)
-	} else if c < 16 {
-		// Bright ANSI colors 8-15
-		fmt.Fprintf(sb, "\033[%dm", 90+(c-8))
-	} else if c < 256 {
-		// 256-color mode
-		fmt.Fprintf(sb, "\033[38;5;%dm", c)
-	} else {
-		// True color (RGB encoded in the color value)
-		// vt10x stores RGB as: color = r<<16 | g<<8 | b
-		r := (c >> 16) & 0xFF
-		g := (c >> 8) & 0xFF
-		b := c & 0xFF
-		fmt.Fprintf(sb, "\033[38;2;%d;%d;%dm", r, g, b)
-	}
-}
-
-func writeBGColor(sb *strings.Builder, c vt10x.Color) {
-	// Skip default colors
-	if c == vt10x.DefaultBG || c == vt10x.DefaultFG {
-		return
-	}
-	if c < 8 {
-		// Standard ANSI colors 0-7
-		fmt.Fprintf(sb, "\033[%dm", 40+c)
-	} else if c < 16 {
-		// Bright ANSI colors 8-15
-		fmt.Fprintf(sb, "\033[%dm", 100+(c-8))
-	} else if c < 256 {
-		// 256-color mode
-		fmt.Fprintf(sb, "\033[48;5;%dm", c)
-	} else {
-		// True color (RGB encoded in the color value)
-		r := (c >> 16) & 0xFF
-		g := (c >> 8) & 0xFF
-		b := c & 0xFF
-		fmt.Fprintf(sb, "\033[48;2;%d;%d;%dm", r, g, b)
-	}
 }
 
 func setupKeybindings(g *gocui.Gui, ctrl *ControlMode) error {
