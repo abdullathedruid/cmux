@@ -26,14 +26,21 @@ func (c *EditorController) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui
 	case key == gocui.KeyEsc:
 		c.cancel(c.gui, v)
 		return true
-	case key == gocui.KeyCtrlS:
-		c.save(c.gui, v)
-		return true
 	case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
 		c.backspace(c.gui, v)
 		return true
 	case key == gocui.KeyEnter:
-		c.newline(c.gui, v)
+		// Check if last character is backslash - if so, add newline instead of saving
+		if len(c.content) > 0 && c.content[len(c.content)-1] == '\\' {
+			c.content = c.content[:len(c.content)-1] // Remove backslash
+			c.newline(c.gui, v)
+		} else {
+			c.save(c.gui, v)
+		}
+		return true
+	case key == gocui.KeySpace:
+		c.content += " "
+		c.Render(c.gui)
 		return true
 	case ch != 0 && mod == gocui.ModNone:
 		c.content += string(ch)
@@ -128,7 +135,7 @@ func (c *EditorController) Render(g *gocui.Gui) error {
 	fmt.Fprintln(v, c.content+"_")
 	fmt.Fprintln(v, "")
 	fmt.Fprintln(v, "───────────────────────────────────────────")
-	fmt.Fprintln(v, "Ctrl+S: Save  Esc: Cancel")
+	fmt.Fprintln(v, "Enter: Save  \\Enter: Newline  Esc: Cancel")
 
 	return nil
 }
