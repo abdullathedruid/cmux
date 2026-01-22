@@ -521,10 +521,12 @@ func (c *WizardController) createSessionForPath(g *gocui.Gui, path, branch strin
 		return err
 	}
 
-	// Refresh and attach
+	// Refresh and select the new session
 	if c.ctx.OnRefresh != nil {
 		c.ctx.OnRefresh()
 	}
+	c.ctx.State.SetSelectedSession(sessionName)
+
 	if c.ctx.OnAttach != nil {
 		return c.ctx.OnAttach(sessionName)
 	}
