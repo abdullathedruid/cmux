@@ -32,12 +32,14 @@ type OrphanedWorktree struct {
 
 // CleanupController manages the worktree cleanup modal.
 type CleanupController struct {
-	ctx       *Context
-	visible   bool
-	gui       *gocui.Gui
-	step      cleanupStep
-	orphans   []OrphanedWorktree
-	cursor    int
+	ctx          *Context
+	visible      bool
+	gui          *gocui.Gui
+	step         cleanupStep
+	orphans      []OrphanedWorktree
+	cursor       int
+	scrollOffset int
+	viewHeight   int
 }
 
 // NewCleanupController creates a new cleanup controller.
@@ -115,6 +117,7 @@ func (c *CleanupController) Show(g *gocui.Gui) error {
 	c.gui = g
 	c.step = stepSelectWorktrees
 	c.cursor = 0
+	c.scrollOffset = 0
 
 	// Find orphaned worktrees
 	if err := c.findOrphanedWorktrees(); err != nil {
@@ -149,6 +152,12 @@ func (c *CleanupController) Layout(g *gocui.Gui) error {
 	if err != nil && !errors.Is(err, gocui.ErrUnknownView) {
 		return err
 	}
+
+	// Calculate visible height for items (height - header lines - footer lines - borders)
+	// Header: 3 lines (empty, "Select worktrees...", empty)
+	// Footer: 3 lines (empty, separator, controls x2)
+	// Plus repo name lines
+	c.viewHeight = height - 2 - 6 // borders and fixed content
 
 	v.Title = c.getTitle()
 	v.Wrap = false
@@ -212,7 +221,19 @@ func (c *CleanupController) renderSelectStep(v *gocui.View) {
 	fmt.Fprintln(v, "  Select worktrees to remove:")
 	fmt.Fprintln(v, "")
 
-	// Group by repo
+	// Determine visible range
+	visibleStart := c.scrollOffset
+	visibleEnd := c.scrollOffset + c.viewHeight
+	if visibleEnd > len(c.orphans) {
+		visibleEnd = len(c.orphans)
+	}
+
+	// Show scroll indicator at top if needed
+	if c.scrollOffset > 0 {
+		fmt.Fprintln(v, "  ↑ more above")
+	}
+
+	// Group by repo but only render visible items
 	repoGroups := make(map[string][]int)
 	repoOrder := []string{}
 	for i := range c.orphans {
@@ -223,9 +244,30 @@ func (c *CleanupController) renderSelectStep(v *gocui.View) {
 		repoGroups[name] = append(repoGroups[name], i)
 	}
 
+	currentLine := 0
 	for _, repoName := range repoOrder {
-		fmt.Fprintf(v, "  %s:\n", repoName)
-		for _, idx := range repoGroups[repoName] {
+		indices := repoGroups[repoName]
+
+		// Check if any items in this repo are visible
+		repoHasVisible := false
+		for _, idx := range indices {
+			if idx >= visibleStart && idx < visibleEnd {
+				repoHasVisible = true
+				break
+			}
+		}
+
+		if repoHasVisible {
+			fmt.Fprintf(v, "  %s:\n", repoName)
+		}
+
+		for _, idx := range indices {
+			// Only render if within visible range
+			if idx < visibleStart || idx >= visibleEnd {
+				currentLine++
+				continue
+			}
+
 			orphan := &c.orphans[idx]
 
 			// Cursor and checkbox
@@ -249,7 +291,13 @@ func (c *CleanupController) renderSelectStep(v *gocui.View) {
 			age := formatAge(orphan.Age)
 
 			fmt.Fprintf(v, "  %s%s %s (%s, %s)\n", prefix, checkbox, orphan.Worktree.Branch, status, age)
+			currentLine++
 		}
+	}
+
+	// Show scroll indicator at bottom if needed
+	if visibleEnd < len(c.orphans) {
+		fmt.Fprintln(v, "  ↓ more below")
 	}
 
 	fmt.Fprintln(v, "")
@@ -268,10 +316,26 @@ func (c *CleanupController) renderConfirmStep(v *gocui.View) {
 	fmt.Fprintln(v, "  The following worktrees will be removed:")
 	fmt.Fprintln(v, "")
 
+	// Collect selected items
+	var selected []string
 	for i := range c.orphans {
 		if c.orphans[i].Selected {
-			fmt.Fprintf(v, "    - %s/%s\n", c.orphans[i].RepoName, c.orphans[i].Worktree.Branch)
+			selected = append(selected, fmt.Sprintf("    - %s/%s", c.orphans[i].RepoName, c.orphans[i].Worktree.Branch))
 		}
+	}
+
+	// Show items with scroll if needed
+	maxVisible := c.viewHeight
+	if len(selected) <= maxVisible {
+		for _, item := range selected {
+			fmt.Fprintln(v, item)
+		}
+	} else {
+		// Show first few and indicate more
+		for i := 0; i < maxVisible-1; i++ {
+			fmt.Fprintln(v, selected[i])
+		}
+		fmt.Fprintf(v, "    ... and %d more\n", len(selected)-maxVisible+1)
 	}
 
 	fmt.Fprintln(v, "")
@@ -359,12 +423,20 @@ func (c *CleanupController) findOrphanedWorktrees() error {
 func (c *CleanupController) cursorDown() {
 	if c.cursor < len(c.orphans)-1 {
 		c.cursor++
+		// Scroll down if cursor goes below visible area
+		if c.cursor >= c.scrollOffset+c.viewHeight {
+			c.scrollOffset = c.cursor - c.viewHeight + 1
+		}
 	}
 }
 
 func (c *CleanupController) cursorUp() {
 	if c.cursor > 0 {
 		c.cursor--
+		// Scroll up if cursor goes above visible area
+		if c.cursor < c.scrollOffset {
+			c.scrollOffset = c.cursor
+		}
 	}
 }
 
