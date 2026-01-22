@@ -67,7 +67,7 @@ func (c *DashboardController) Keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding(dashboardViewName, 'n', gocui.ModNone, c.newSession); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding(dashboardViewName, 'd', gocui.ModNone, c.deleteSession); err != nil {
+	if err := g.SetKeybinding(dashboardViewName, 'x', gocui.ModNone, c.deleteSession); err != nil {
 		return err
 	}
 	if err := g.SetKeybinding(dashboardViewName, 'r', gocui.ModNone, c.refresh); err != nil {

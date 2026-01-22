@@ -86,13 +86,13 @@ func (c *SessionsController) Keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding(sessionsViewName, 'n', gocui.ModNone, c.newSession); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding(sessionsViewName, 'd', gocui.ModNone, c.deleteSession); err != nil {
+	if err := g.SetKeybinding(sessionsViewName, 'x', gocui.ModNone, c.deleteSession); err != nil {
 		return err
 	}
 	if err := g.SetKeybinding(sessionsViewName, 'r', gocui.ModNone, c.refresh); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding(sessionsViewName, 'D', gocui.ModNone, c.showDiff); err != nil {
+	if err := g.SetKeybinding(sessionsViewName, 'd', gocui.ModNone, c.showDiff); err != nil {
 		return err
 	}
 
