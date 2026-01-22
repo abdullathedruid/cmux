@@ -68,10 +68,23 @@ func (c *ControlMode) Start(width, height int) error {
 	// Start reading output
 	go c.readOutput()
 
-	// Tell tmux our window size
+	// Tell tmux our window size and request initial content
 	c.Resize(width, height)
+	c.RequestRefresh()
 
 	return nil
+}
+
+// RequestRefresh asks tmux to redraw the pane content.
+func (c *ControlMode) RequestRefresh() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Send Ctrl+L to trigger a screen redraw in most applications
+	// This is a common convention for terminal apps to redraw
+	cmd := fmt.Sprintf("send-keys -t %s C-l\n", c.session)
+	_, err := c.pty.Write([]byte(cmd))
+	return err
 }
 
 // Resize tells tmux about our new window size.
@@ -265,8 +278,20 @@ func main() {
 
 func layoutFunc(term vt10x.Terminal, title string, ctrl *ControlMode) func(*gocui.Gui) error {
 	firstCall := true
+	lastWidth, lastHeight := 0, 0
 	return func(g *gocui.Gui) error {
 		maxX, maxY := g.Size()
+		termWidth := maxX - 2
+		termHeight := maxY - 2
+
+		// Handle resize
+		if termWidth != lastWidth || termHeight != lastHeight {
+			if termWidth > 0 && termHeight > 0 {
+				term.Resize(termWidth, termHeight)
+				ctrl.Resize(termWidth, termHeight)
+				lastWidth, lastHeight = termWidth, termHeight
+			}
+		}
 
 		v, err := g.SetView("terminal", 0, 0, maxX-1, maxY-1, 0)
 		if err != nil {
@@ -293,7 +318,7 @@ func layoutFunc(term vt10x.Terminal, title string, ctrl *ControlMode) func(*gocu
 
 		// Render terminal buffer to view
 		v.Clear()
-		renderTerminal(v, term, maxX-2, maxY-2)
+		renderTerminal(v, term)
 
 		// Set cursor position
 		term.Lock()
@@ -321,9 +346,11 @@ const (
 	attrBlink     = 1 << 4
 )
 
-func renderTerminal(v *gocui.View, term vt10x.Terminal, width, height int) {
+func renderTerminal(v *gocui.View, term vt10x.Terminal) {
 	term.Lock()
 	defer term.Unlock()
+
+	width, height := term.Size()
 
 	var sb strings.Builder
 	var lastFG, lastBG vt10x.Color = vt10x.DefaultFG, vt10x.DefaultBG
