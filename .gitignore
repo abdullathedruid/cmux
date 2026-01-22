@@ -36,3 +36,4 @@ Thumbs.db
 
 # Worktrees (managed by git)
 .worktrees/
+CLAUDE.local.md
