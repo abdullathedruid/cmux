@@ -149,7 +149,8 @@ func (c *RealClient) AttachSession(name string) error {
 	cmd := exec.Command("tmux", "attach-session", "-t", name)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// Don't pass stderr - tmux prints "[detached (from session ...)]" messages
+	// that clutter the terminal. Actual errors will still cause cmd.Run() to fail.
 	return cmd.Run()
 }
 
