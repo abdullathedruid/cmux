@@ -36,6 +36,8 @@ func StatusIcon(attached bool, status state.SessionStatus) string {
 		return "◑" // Other half for thinking
 	case state.StatusNeedsInput:
 		return "🔔" // Bell for needs input
+	case state.StatusStopped:
+		return "✓" // Checkmark for stopped/done
 	default:
 		return "○" // Empty circle for idle
 	}
@@ -53,6 +55,8 @@ func StatusColor(attached bool, status state.SessionStatus) string {
 		return ColorCyan
 	case state.StatusNeedsInput:
 		return ColorMagenta
+	case state.StatusStopped:
+		return ColorGreen
 	default:
 		return ColorWhite
 	}
@@ -72,6 +76,8 @@ func StatusText(attached bool, status state.SessionStatus) string {
 		return "THINKING"
 	case state.StatusNeedsInput:
 		return "INPUT"
+	case state.StatusStopped:
+		return "DONE"
 	default:
 		return "IDLE"
 	}

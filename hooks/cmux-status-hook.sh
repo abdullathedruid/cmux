@@ -51,7 +51,7 @@ case "$EVENT" in
         TOOL=""
         ;;
     Stop|SubagentStop)
-        STATUS="idle"
+        STATUS="stopped"
         TOOL=""
         ;;
     Notification|PermissionRequest)

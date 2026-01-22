@@ -167,6 +167,8 @@ func TestSessionStatus(t *testing.T) {
 		{StatusActive, "active"},
 		{StatusTool, "tool"},
 		{StatusThinking, "thinking"},
+		{StatusNeedsInput, "needs_input"},
+		{StatusStopped, "stopped"},
 	}
 
 	for _, tt := range tests {

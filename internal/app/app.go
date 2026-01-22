@@ -475,6 +475,8 @@ func (a *App) convertSession(ts tmux.Session) *state.Session {
 			sess.Status = state.StatusThinking
 		case "needs_input":
 			sess.Status = state.StatusNeedsInput
+		case "stopped":
+			sess.Status = state.StatusStopped
 		default:
 			sess.Status = state.StatusIdle
 		}

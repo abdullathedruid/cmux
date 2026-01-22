@@ -96,8 +96,8 @@ func ReadFullStatusWithHistory(sessionName string, maxHistory int) SessionStatus
 	}
 
 	// Check if status is stale (older than 30 seconds = probably not running)
-	// Exception: "needs_input" should persist until user actually intervenes
-	if hs.TS > 0 && hs.Status != "needs_input" {
+	// Exception: "needs_input" and "stopped" should persist until user actually intervenes
+	if hs.TS > 0 && hs.Status != "needs_input" && hs.Status != "stopped" {
 		age := time.Now().Unix() - hs.TS
 		if age > 30 {
 			result.Status = "idle"
