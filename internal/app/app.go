@@ -64,6 +64,7 @@ func New(cfg *config.Config) (*App, error) {
 	// Set up context callbacks
 	ctx.OnAttach = app.attachSession
 	ctx.OnPopupAttach = app.popupSession
+	ctx.OnShowDiff = app.showDiff
 	ctx.OnNew = app.newSession
 	ctx.OnDelete = app.deleteSession
 	ctx.OnRefresh = app.refresh
@@ -553,6 +554,31 @@ func (a *App) popupSession(name string) error {
 
 	// Open in popup - this blocks until popup closes
 	return a.tmux.DisplayPopup(name)
+}
+
+func (a *App) showDiff(name string) error {
+	// Get the session to find its worktree path
+	sess := a.state.GetSession(name)
+	if sess == nil {
+		return nil
+	}
+
+	// Determine the working directory
+	workdir := sess.Worktree
+	if workdir == "" {
+		workdir = sess.RepoPath
+	}
+	if workdir == "" {
+		return nil // No git directory available
+	}
+
+	// Popup only works when inside tmux and when tmux supports it
+	if !a.tmux.IsInsideTmux() || !a.tmux.SupportsPopup() {
+		return nil // Can't show diff without popup support
+	}
+
+	// Open diff in popup - this blocks until popup closes
+	return a.tmux.DisplayDiffPopup(workdir)
 }
 
 func (a *App) newSession() error {

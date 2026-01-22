@@ -92,6 +92,9 @@ func (c *SessionsController) Keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding(sessionsViewName, 'r', gocui.ModNone, c.refresh); err != nil {
 		return err
 	}
+	if err := g.SetKeybinding(sessionsViewName, 'D', gocui.ModNone, c.showDiff); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -320,6 +323,17 @@ func (c *SessionsController) deleteSession(g *gocui.Gui, v *gocui.View) error {
 func (c *SessionsController) refresh(g *gocui.Gui, v *gocui.View) error {
 	if c.ctx.OnRefresh != nil {
 		return c.ctx.OnRefresh()
+	}
+	return nil
+}
+
+func (c *SessionsController) showDiff(g *gocui.Gui, v *gocui.View) error {
+	sess := c.ctx.State.GetSelectedSession()
+	if sess == nil {
+		return nil
+	}
+	if c.ctx.OnShowDiff != nil {
+		return c.ctx.OnShowDiff(sess.Name)
 	}
 	return nil
 }

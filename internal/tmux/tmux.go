@@ -43,6 +43,8 @@ type Client interface {
 	SupportsPopup() bool
 	// DisplayPopup opens a session in a tmux popup window.
 	DisplayPopup(name string) error
+	// DisplayDiffPopup opens a git diff in a tmux popup window.
+	DisplayDiffPopup(workdir string) error
 	// GetCurrentSession returns the name of the current tmux session, or empty if not in tmux.
 	GetCurrentSession() string
 }
@@ -288,6 +290,25 @@ func (c *RealClient) DisplayPopup(name string) error {
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("tmux display-popup: %w: %s", err, stderr.String())
+	}
+	return nil
+}
+
+// DisplayDiffPopup opens a git diff in a tmux popup window.
+// The user's configured git pager (e.g., delta) will be used automatically.
+func (c *RealClient) DisplayDiffPopup(workdir string) error {
+	cmd := exec.Command("tmux", "display-popup",
+		"-E",        // Close popup when command exits
+		"-w", "90%", // Width
+		"-h", "90%", // Height
+		"-d", workdir, // Set working directory
+		"git", "diff", "HEAD",
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("tmux display-popup (diff): %w: %s", err, stderr.String())
 	}
 	return nil
 }

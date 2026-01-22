@@ -311,7 +311,7 @@ func RenderStatusBar(sessionCount, attachedCount, activeCount int, isDashboard b
 
 	idleCount := sessionCount - attachedCount - activeCount
 	stats := fmt.Sprintf("%d sessions │ %d attached │ %d active │ %d idle", sessionCount, attachedCount, activeCount, idleCount)
-	help := "hjkl:nav enter:attach p:popup n:new ?:help v:" + viewName
+	help := "hjkl:nav enter:attach p:popup D:diff n:new ?:help v:" + viewName
 
 	return stats + "        " + help + "        " + version
 }
@@ -348,6 +348,7 @@ Session Management
   N                  New session wizard
   w                  Worktree picker
   d                  Delete selected session
+  D                  Show git diff in popup (tmux 3.2+)
   e                  Edit session note (Ctrl+S to save)
   r                  Refresh session list
 

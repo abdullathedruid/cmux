@@ -22,16 +22,17 @@ type Controller interface {
 
 // Context provides shared context for all controllers.
 type Context struct {
-	State        *state.State
-	TmuxClient   tmux.Client
-	OnAttach     func(sessionName string) error
+	State         *state.State
+	TmuxClient    tmux.Client
+	OnAttach      func(sessionName string) error
 	OnPopupAttach func(sessionName string) error
-	OnNew        func() error
-	OnDelete     func(sessionName string) error
-	OnRefresh    func() error
-	OnQuit       func() error
-	OnToggleView func()
-	OnShowHelp   func()
+	OnShowDiff    func(sessionName string) error
+	OnNew         func() error
+	OnDelete      func(sessionName string) error
+	OnRefresh     func() error
+	OnQuit        func() error
+	OnToggleView  func()
+	OnShowHelp    func()
 }
 
 // NewContext creates a new controller context.
