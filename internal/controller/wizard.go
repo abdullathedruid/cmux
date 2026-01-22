@@ -269,15 +269,37 @@ func (c *WizardController) renderBranchSelection(v *gocui.View) {
 		if len(items) < maxShow {
 			maxShow = len(items)
 		}
-		for i := 0; i < maxShow; i++ {
+
+		// Calculate viewport offset to keep selected item visible
+		viewportStart := 0
+		if c.selected >= maxShow {
+			viewportStart = c.selected - maxShow + 1
+		}
+		viewportEnd := viewportStart + maxShow
+		if viewportEnd > len(items) {
+			viewportEnd = len(items)
+			viewportStart = viewportEnd - maxShow
+			if viewportStart < 0 {
+				viewportStart = 0
+			}
+		}
+
+		// Show indicator if there are items above
+		if viewportStart > 0 {
+			fmt.Fprintf(v, "  ... and %d more above\n", viewportStart)
+		}
+
+		for i := viewportStart; i < viewportEnd; i++ {
 			prefix := "  "
 			if i == c.selected {
 				prefix = "> "
 			}
 			fmt.Fprintf(v, "%s%s\n", prefix, items[i])
 		}
-		if len(items) > maxShow {
-			fmt.Fprintf(v, "  ... and %d more\n", len(items)-maxShow)
+
+		// Show indicator if there are items below
+		if viewportEnd < len(items) {
+			fmt.Fprintf(v, "  ... and %d more\n", len(items)-viewportEnd)
 		}
 	}
 
