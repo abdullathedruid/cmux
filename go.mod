@@ -3,7 +3,9 @@ module github.com/abdullathedruid/cmux
 go 1.25
 
 require (
+	github.com/creack/pty v1.1.24
 	github.com/go-errors/errors v1.0.2
+	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
 	github.com/jesseduffield/gocui v0.3.1-0.20260111170441-330357056207
 	github.com/mattn/go-runewidth v0.0.19
 	gopkg.in/yaml.v3 v3.0.1
