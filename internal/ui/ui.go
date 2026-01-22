@@ -255,7 +255,7 @@ func (c *Card) renderLarge() []string {
 		endCorner = "┓"
 		borderChar = "━"
 	}
-	topBorder := corner + c.Title + " " + strings.Repeat(borderChar, max(0, width-runewidth.StringWidth(c.Title)-3)) + endCorner
+	topBorder := corner + borderChar + " " + c.Title + " " + strings.Repeat(borderChar, max(0, width-runewidth.StringWidth(c.Title)-5)) + endCorner
 	lines = append(lines, borderColor+topBorder+colorReset)
 
 	// Status line with current tool if present
@@ -333,7 +333,7 @@ func (c *Card) renderCompact() []string {
 		endCorner = "┓"
 		borderChar = "━"
 	}
-	topBorder := corner + c.Title + " " + strings.Repeat(borderChar, max(0, width-runewidth.StringWidth(c.Title)-3)) + endCorner
+	topBorder := corner + borderChar + " " + c.Title + " " + strings.Repeat(borderChar, max(0, width-runewidth.StringWidth(c.Title)-5)) + endCorner
 	lines = append(lines, borderColor+topBorder+colorReset)
 
 	// Combined status + last active line

@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -271,6 +272,9 @@ func parseTimestamp(s string) time.Time {
 }
 
 func truncate(s string, maxLen int) string {
+	// Replace newlines with spaces to prevent breaking TUI layout
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", "")
 	if len(s) <= maxLen {
 		return s
 	}
