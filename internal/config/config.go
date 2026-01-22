@@ -33,6 +33,9 @@ type Config struct {
 
 	// Theme contains theme/appearance configuration
 	Theme Theme `yaml:"theme"`
+
+	// Repositories is a list of git repository paths to track
+	Repositories []string `yaml:"repositories"`
 }
 
 // KeyBindings holds all configurable keybindings.
@@ -189,6 +192,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// Validate repositories
+	if err := ValidateRepositories(cfg.Repositories); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
 }
 
@@ -216,6 +224,11 @@ func mergeConfig(dst, src *Config) {
 
 	// Merge theme
 	mergeTheme(&dst.Theme, &src.Theme)
+
+	// Merge repositories (replace entirely if specified)
+	if len(src.Repositories) > 0 {
+		dst.Repositories = src.Repositories
+	}
 }
 
 // mergeKeyBindings merges keybindings from src into dst.
@@ -342,4 +355,25 @@ func (c *Config) ConfigFile() string {
 // EnsureDataDir creates the data directory if it doesn't exist.
 func (c *Config) EnsureDataDir() error {
 	return os.MkdirAll(c.DataDir, 0755)
+}
+
+// ExpandedRepositories returns the repositories with ~ expanded to the home directory.
+func (c *Config) ExpandedRepositories() []string {
+	expanded := make([]string, len(c.Repositories))
+	for i, repo := range c.Repositories {
+		expanded[i] = expandPath(repo)
+	}
+	return expanded
+}
+
+// expandPath expands ~ to the user's home directory.
+func expandPath(path string) string {
+	if len(path) > 0 && path[0] == '~' {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(home, path[1:])
+	}
+	return path
 }

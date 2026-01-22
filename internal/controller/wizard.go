@@ -95,24 +95,37 @@ func (c *WizardController) Show(g *gocui.Gui) error {
 	return c.Layout(g)
 }
 
-// gatherRecentRepos gets unique repo paths from existing sessions.
+// gatherRecentRepos gets unique repo paths from config, existing sessions, and cwd.
 func (c *WizardController) gatherRecentRepos() []string {
-	sessions := c.ctx.State.GetSessions()
 	seen := make(map[string]bool)
 	var repos []string
 
-	for _, sess := range sessions {
-		if sess.RepoPath != "" && !seen[sess.RepoPath] {
-			seen[sess.RepoPath] = true
-			repos = append(repos, sess.RepoPath)
+	// Helper to add a repo if not already seen
+	addRepo := func(path string) {
+		if path != "" && !seen[path] {
+			seen[path] = true
+			repos = append(repos, path)
 		}
 	}
 
-	// Also add current directory if it's a git repo
+	// 1. Add current directory first (if it's a git repo)
 	if cwd, err := os.Getwd(); err == nil {
-		if root, err := git.FindRepoRoot(cwd); err == nil && !seen[root] {
-			repos = append([]string{root}, repos...) // Prepend cwd
+		if root, err := git.FindRepoRoot(cwd); err == nil {
+			addRepo(root)
 		}
+	}
+
+	// 2. Add configured repositories
+	for _, repo := range c.ctx.Config.ExpandedRepositories() {
+		// Resolve to git root in case user specified a subdirectory
+		if root, err := git.FindRepoRoot(repo); err == nil {
+			addRepo(root)
+		}
+	}
+
+	// 3. Add repos from existing sessions
+	for _, sess := range c.ctx.State.GetSessions() {
+		addRepo(sess.RepoPath)
 	}
 
 	return repos

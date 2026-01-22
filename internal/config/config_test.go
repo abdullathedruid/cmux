@@ -149,3 +149,108 @@ func TestDefaultShellWithEnv(t *testing.T) {
 		t.Errorf("without SHELL env: got %q, want '/bin/bash'", shell)
 	}
 }
+
+func TestValidateRepositories(t *testing.T) {
+	// Create temp directories for testing
+	tmpDir := t.TempDir()
+	existingRepo := filepath.Join(tmpDir, "existing-repo")
+	if err := os.MkdirAll(existingRepo, 0755); err != nil {
+		t.Fatalf("failed to create test directory: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		repos   []string
+		wantErr bool
+	}{
+		{
+			name:    "empty list",
+			repos:   []string{},
+			wantErr: false,
+		},
+		{
+			name:    "existing path",
+			repos:   []string{existingRepo},
+			wantErr: false,
+		},
+		{
+			name:    "non-existing path",
+			repos:   []string{"/path/that/does/not/exist"},
+			wantErr: true,
+		},
+		{
+			name:    "mixed paths",
+			repos:   []string{existingRepo, "/path/that/does/not/exist"},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateRepositories(tt.repos)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateRepositories() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestExpandPath(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home dir: %v", err)
+	}
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"~/test", filepath.Join(home, "test")},
+		{"~/", home},
+		{"/absolute/path", "/absolute/path"},
+		{"relative/path", "relative/path"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := expandPath(tt.input)
+			if result != tt.expected {
+				t.Errorf("expandPath(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExpandedRepositories(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home dir: %v", err)
+	}
+
+	cfg := &Config{
+		Repositories: []string{
+			"~/Coding/project1",
+			"/absolute/path",
+			"~/another/repo",
+		},
+	}
+
+	expanded := cfg.ExpandedRepositories()
+
+	if len(expanded) != 3 {
+		t.Fatalf("expected 3 repos, got %d", len(expanded))
+	}
+
+	expectedPaths := []string{
+		filepath.Join(home, "Coding/project1"),
+		"/absolute/path",
+		filepath.Join(home, "another/repo"),
+	}
+
+	for i, expected := range expectedPaths {
+		if expanded[i] != expected {
+			t.Errorf("expanded[%d] = %q, want %q", i, expanded[i], expected)
+		}
+	}
+}

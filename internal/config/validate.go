@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 )
@@ -68,4 +69,22 @@ func ValidateColor(color string) bool {
 		"white":   true,
 	}
 	return validColors[strings.ToLower(color)]
+}
+
+// ValidateRepositories checks that all repository paths exist.
+func ValidateRepositories(repos []string) error {
+	var missing []string
+	for _, repo := range repos {
+		// Expand ~ to home directory
+		path := expandPath(repo)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			missing = append(missing, repo)
+		}
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("repository paths do not exist:\n  %s", strings.Join(missing, "\n  "))
+	}
+
+	return nil
 }
