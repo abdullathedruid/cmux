@@ -34,6 +34,7 @@ type App struct {
 	statusBar *controller.StatusBarController
 	help      *controller.HelpController
 	worktree  *controller.WorktreeController
+	cleanup   *controller.CleanupController
 	editor    *controller.EditorController
 	search    *controller.SearchController
 	wizard    *controller.WizardController
@@ -82,6 +83,7 @@ func New(cfg *config.Config) (*App, error) {
 	app.statusBar = controller.NewStatusBarController(ctx)
 	app.help = controller.NewHelpController(ctx)
 	app.worktree = controller.NewWorktreeController(ctx)
+	app.cleanup = controller.NewCleanupController(ctx)
 	app.editor = controller.NewEditorController(ctx, app.saveNote)
 	app.search = controller.NewSearchController(ctx, nil) // nil = just select, don't attach
 	app.wizard = controller.NewWizardController(ctx)
@@ -203,6 +205,13 @@ func (a *App) layout(g *gocui.Gui) error {
 		}
 	}
 
+	// Cleanup modal overlay (if visible)
+	if a.cleanup.IsVisible() {
+		if err := a.cleanup.Layout(g); err != nil {
+			return fmt.Errorf("cleanup.Layout: %w", err)
+		}
+	}
+
 	// Editor overlay (if visible)
 	if a.editor.IsVisible() {
 		if err := a.editor.Layout(g); err != nil {
@@ -272,6 +281,11 @@ func (a *App) setupKeybindings() error {
 		return fmt.Errorf("keybinding worktree (%s): %w", keys.Worktree, err)
 	}
 
+	// Worktree cleanup
+	if err := a.setKeyBinding("", keys.WorktreeCleanup, a.cleanupHandler); err != nil {
+		return fmt.Errorf("keybinding worktree_cleanup (%s): %w", keys.WorktreeCleanup, err)
+	}
+
 	// Note editor
 	if err := a.setKeyBinding("", keys.EditNote, a.editNoteHandler); err != nil {
 		return fmt.Errorf("keybinding edit_note (%s): %w", keys.EditNote, err)
@@ -314,6 +328,9 @@ func (a *App) setupKeybindings() error {
 	if err := a.worktree.Keybindings(a.gui); err != nil {
 		return fmt.Errorf("worktree.Keybindings: %w", err)
 	}
+	if err := a.cleanup.Keybindings(a.gui); err != nil {
+		return fmt.Errorf("cleanup.Keybindings: %w", err)
+	}
 	if err := a.editor.Keybindings(a.gui); err != nil {
 		return fmt.Errorf("editor.Keybindings: %w", err)
 	}
@@ -344,7 +361,7 @@ func (a *App) setKeyBinding(viewName, keyStr string, handler func(*gocui.Gui, *g
 
 // isModalOpen returns true if any modal is currently visible.
 func (a *App) isModalOpen() bool {
-	return a.help.IsVisible() || a.worktree.IsVisible() ||
+	return a.help.IsVisible() || a.worktree.IsVisible() || a.cleanup.IsVisible() ||
 		a.editor.IsVisible() || a.search.IsVisible() || a.wizard.IsVisible()
 }
 
@@ -376,6 +393,13 @@ func (a *App) worktreeHandler(g *gocui.Gui, v *gocui.View) error {
 		return nil
 	}
 	return a.worktree.Show(g)
+}
+
+func (a *App) cleanupHandler(g *gocui.Gui, v *gocui.View) error {
+	if a.isModalOpen() {
+		return nil
+	}
+	return a.cleanup.Show(g)
 }
 
 func (a *App) editNoteHandler(g *gocui.Gui, v *gocui.View) error {

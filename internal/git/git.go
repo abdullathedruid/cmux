@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // RepoInfo contains information about a git repository.
@@ -265,4 +267,82 @@ func ListBranches(repoPath string) ([]string, error) {
 		}
 	}
 	return branches, nil
+}
+
+// GetMainBranch returns the main branch name for the repository.
+// It first tries to get it from the remote HEAD, then falls back to main/master.
+func GetMainBranch(repoPath string) string {
+	// Try to get the default branch from remote HEAD
+	cmd := exec.Command("git", "-C", repoPath, "symbolic-ref", "refs/remotes/origin/HEAD")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err == nil {
+		ref := strings.TrimSpace(stdout.String())
+		// refs/remotes/origin/main -> main
+		if parts := strings.Split(ref, "/"); len(parts) > 0 {
+			return parts[len(parts)-1]
+		}
+	}
+
+	// Fallback: check if main or master exists
+	branches, err := ListBranches(repoPath)
+	if err != nil {
+		return "main"
+	}
+
+	for _, b := range branches {
+		if b == "main" {
+			return "main"
+		}
+	}
+	for _, b := range branches {
+		if b == "master" {
+			return "master"
+		}
+	}
+	return "main"
+}
+
+// IsBranchMerged checks if branch is merged to the main branch.
+func IsBranchMerged(repoPath, branchName string) (bool, error) {
+	mainBranch := GetMainBranch(repoPath)
+
+	cmd := exec.Command("git", "-C", repoPath, "branch", "--merged", mainBranch)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return false, fmt.Errorf("git branch --merged: %w: %s", err, stderr.String())
+	}
+
+	mergedBranches := stdout.String()
+	for _, line := range strings.Split(mergedBranches, "\n") {
+		// Lines may start with "* " or "  "
+		branch := strings.TrimSpace(strings.TrimPrefix(line, "*"))
+		if branch == branchName {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// GetLastCommitTime returns the last commit timestamp for a worktree.
+func GetLastCommitTime(worktreePath string) (time.Time, error) {
+	cmd := exec.Command("git", "-C", worktreePath, "log", "-1", "--format=%ct")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return time.Time{}, fmt.Errorf("git log: %w: %s", err, stderr.String())
+	}
+
+	timestamp, err := strconv.ParseInt(strings.TrimSpace(stdout.String()), 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parsing timestamp: %w", err)
+	}
+
+	return time.Unix(timestamp, 0), nil
 }

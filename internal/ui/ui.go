@@ -465,6 +465,7 @@ Session Management
   n                  New session in current directory
   N                  New session wizard
   w                  Worktree picker
+  W                  Worktree cleanup
   x                  Delete selected session
   d                  Show git diff in popup (tmux 3.2+)
   e                  Edit session note (Ctrl+S to save)

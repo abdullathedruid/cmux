@@ -53,9 +53,10 @@ type KeyBindings struct {
 	NavRight   string `yaml:"nav_right"`
 	Popup      string `yaml:"popup"`
 	NewSession string `yaml:"new_session"`
-	Delete     string `yaml:"delete"`
-	Refresh    string `yaml:"refresh"`
-	Diff       string `yaml:"diff"`
+	Delete           string `yaml:"delete"`
+	Refresh          string `yaml:"refresh"`
+	Diff             string `yaml:"diff"`
+	WorktreeCleanup  string `yaml:"worktree_cleanup"`
 }
 
 // Theme holds theme configuration.
@@ -109,9 +110,10 @@ func DefaultKeyBindings() KeyBindings {
 		NavRight:   "l",
 		Popup:      "p",
 		NewSession: "n",
-		Delete:     "x",
-		Refresh:    "r",
-		Diff:       "d",
+		Delete:          "x",
+		Refresh:         "r",
+		Diff:            "d",
+		WorktreeCleanup: "W",
 	}
 }
 
@@ -280,6 +282,9 @@ func mergeKeyBindings(dst, src *KeyBindings) {
 	}
 	if src.Diff != "" {
 		dst.Diff = src.Diff
+	}
+	if src.WorktreeCleanup != "" {
+		dst.WorktreeCleanup = src.WorktreeCleanup
 	}
 }
 
