@@ -4,6 +4,7 @@ package controller
 import (
 	"github.com/jesseduffield/gocui"
 
+	"github.com/abdullathedruid/cmux/internal/config"
 	"github.com/abdullathedruid/cmux/internal/state"
 	"github.com/abdullathedruid/cmux/internal/tmux"
 )
@@ -22,6 +23,7 @@ type Controller interface {
 
 // Context provides shared context for all controllers.
 type Context struct {
+	Config        *config.Config
 	State         *state.State
 	TmuxClient    tmux.Client
 	OnAttach      func(sessionName string) error
@@ -36,8 +38,9 @@ type Context struct {
 }
 
 // NewContext creates a new controller context.
-func NewContext(s *state.State, t tmux.Client) *Context {
+func NewContext(cfg *config.Config, s *state.State, t tmux.Client) *Context {
 	return &Context{
+		Config:     cfg,
 		State:      s,
 		TmuxClient: t,
 	}

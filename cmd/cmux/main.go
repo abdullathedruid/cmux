@@ -10,8 +10,12 @@ import (
 )
 
 func main() {
-	// Load configuration
-	cfg := config.Default()
+	// Load configuration from file (falls back to defaults if not found)
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Ensure data directory exists
 	if err := cfg.EnsureDataDir(); err != nil {

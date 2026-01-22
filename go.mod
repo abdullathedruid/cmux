@@ -6,6 +6,7 @@ require (
 	github.com/go-errors/errors v1.0.2
 	github.com/jesseduffield/gocui v0.3.1-0.20260111170441-330357056207
 	github.com/mattn/go-runewidth v0.0.19
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

@@ -9,6 +9,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/jesseduffield/gocui"
 
+	"github.com/abdullathedruid/cmux/internal/config"
 	"github.com/abdullathedruid/cmux/internal/state"
 	"github.com/abdullathedruid/cmux/internal/ui"
 )
@@ -49,6 +50,8 @@ func (c *DashboardController) Layout(g *gocui.Gui) error {
 // Keybindings sets up dashboard-specific keybindings.
 // Note: j/k/h/l navigation is handled globally in app.go to work around tcell keybinding issues.
 func (c *DashboardController) Keybindings(g *gocui.Gui) error {
+	keys := &c.ctx.Config.Keys
+
 	// Arrow key navigation (special keys work fine with view-specific bindings)
 	if err := g.SetKeybinding(dashboardViewName, gocui.KeyArrowDown, gocui.ModNone, c.cursorDown); err != nil {
 		return err
@@ -57,27 +60,40 @@ func (c *DashboardController) Keybindings(g *gocui.Gui) error {
 		return err
 	}
 
-	// Actions
+	// Actions - Enter is hardcoded as it's the universal "confirm" key
 	if err := g.SetKeybinding(dashboardViewName, gocui.KeyEnter, gocui.ModNone, c.attach); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding(dashboardViewName, 'p', gocui.ModNone, c.popupAttach); err != nil {
+	if err := c.setKeyBinding(g, dashboardViewName, keys.Popup, c.popupAttach); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding(dashboardViewName, 'n', gocui.ModNone, c.newSession); err != nil {
+	if err := c.setKeyBinding(g, dashboardViewName, keys.NewSession, c.newSession); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding(dashboardViewName, 'x', gocui.ModNone, c.deleteSession); err != nil {
+	if err := c.setKeyBinding(g, dashboardViewName, keys.Delete, c.deleteSession); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding(dashboardViewName, 'r', gocui.ModNone, c.refresh); err != nil {
+	if err := c.setKeyBinding(g, dashboardViewName, keys.Refresh, c.refresh); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding(dashboardViewName, 'd', gocui.ModNone, c.showDiff); err != nil {
+	if err := c.setKeyBinding(g, dashboardViewName, keys.Diff, c.showDiff); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// setKeyBinding parses a key string and sets a keybinding.
+func (c *DashboardController) setKeyBinding(g *gocui.Gui, viewName, keyStr string, handler func(*gocui.Gui, *gocui.View) error) error {
+	key, err := config.ParseKeyPreserveCase(keyStr)
+	if err != nil {
+		return err
+	}
+
+	if key.IsRune() {
+		return g.SetKeybinding(viewName, key.Rune(), key.Mod, handler)
+	}
+	return g.SetKeybinding(viewName, key.GocuiKey(), key.Mod, handler)
 }
 
 // Card height constants

@@ -16,6 +16,7 @@ import (
 	"github.com/abdullathedruid/cmux/internal/state"
 	"github.com/abdullathedruid/cmux/internal/status"
 	"github.com/abdullathedruid/cmux/internal/tmux"
+	"github.com/abdullathedruid/cmux/internal/ui"
 )
 
 // App is the main application.
@@ -43,10 +44,13 @@ type App struct {
 
 // New creates a new App.
 func New(cfg *config.Config) (*App, error) {
+	// Set the UI theme from config
+	ui.SetTheme(&cfg.Theme)
+
 	s := state.New()
 	t := tmux.NewClient(cfg.ClaudeCommand)
 	n := notes.NewStore(cfg.NotesFile())
-	ctx := controller.NewContext(s, t)
+	ctx := controller.NewContext(cfg, s, t)
 
 	// Load existing notes
 	if err := n.Load(); err != nil {
@@ -242,56 +246,59 @@ func (a *App) render() error {
 
 // setupKeybindings sets up global keybindings.
 func (a *App) setupKeybindings() error {
+	keys := &a.config.Keys
+
 	// Global quit
-	if err := a.gui.SetKeybinding("", 'q', gocui.ModNone, a.quitHandler); err != nil {
-		return fmt.Errorf("keybinding 'q': %w", err)
+	if err := a.setKeyBinding("", keys.Quit, a.quitHandler); err != nil {
+		return fmt.Errorf("keybinding quit (%s): %w", keys.Quit, err)
 	}
+	// Ctrl+C always quits (hardcoded)
 	if err := a.gui.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, a.quitHandler); err != nil {
 		return fmt.Errorf("keybinding 'Ctrl+C': %w", err)
 	}
 
 	// Toggle view
-	if err := a.gui.SetKeybinding("", 'v', gocui.ModNone, a.toggleViewHandler); err != nil {
-		return fmt.Errorf("keybinding 'v': %w", err)
+	if err := a.setKeyBinding("", keys.ToggleView, a.toggleViewHandler); err != nil {
+		return fmt.Errorf("keybinding toggle_view (%s): %w", keys.ToggleView, err)
 	}
 
 	// Help
-	if err := a.gui.SetKeybinding("", '?', gocui.ModNone, a.helpHandler); err != nil {
-		return fmt.Errorf("keybinding '?': %w", err)
+	if err := a.setKeyBinding("", keys.Help, a.helpHandler); err != nil {
+		return fmt.Errorf("keybinding help (%s): %w", keys.Help, err)
 	}
 
 	// Worktree picker
-	if err := a.gui.SetKeybinding("", 'w', gocui.ModNone, a.worktreeHandler); err != nil {
-		return fmt.Errorf("keybinding 'w': %w", err)
+	if err := a.setKeyBinding("", keys.Worktree, a.worktreeHandler); err != nil {
+		return fmt.Errorf("keybinding worktree (%s): %w", keys.Worktree, err)
 	}
 
 	// Note editor
-	if err := a.gui.SetKeybinding("", 'e', gocui.ModNone, a.editNoteHandler); err != nil {
-		return fmt.Errorf("keybinding 'e': %w", err)
+	if err := a.setKeyBinding("", keys.EditNote, a.editNoteHandler); err != nil {
+		return fmt.Errorf("keybinding edit_note (%s): %w", keys.EditNote, err)
 	}
 
 	// Search
-	if err := a.gui.SetKeybinding("", '/', gocui.ModNone, a.searchHandler); err != nil {
-		return fmt.Errorf("keybinding '/': %w", err)
+	if err := a.setKeyBinding("", keys.Search, a.searchHandler); err != nil {
+		return fmt.Errorf("keybinding search (%s): %w", keys.Search, err)
 	}
 
-	// Session wizard (Shift+N)
-	if err := a.gui.SetKeybinding("", 'N', gocui.ModNone, a.wizardHandler); err != nil {
-		return fmt.Errorf("keybinding 'N': %w", err)
+	// Session wizard
+	if err := a.setKeyBinding("", keys.NewWizard, a.wizardHandler); err != nil {
+		return fmt.Errorf("keybinding new_wizard (%s): %w", keys.NewWizard, err)
 	}
 
 	// Navigation keys (global to work around tcell keybinding issue)
-	if err := a.gui.SetKeybinding("", 'j', gocui.ModNone, a.cursorDownHandler); err != nil {
-		return fmt.Errorf("keybinding 'j': %w", err)
+	if err := a.setKeyBinding("", keys.NavDown, a.cursorDownHandler); err != nil {
+		return fmt.Errorf("keybinding nav_down (%s): %w", keys.NavDown, err)
 	}
-	if err := a.gui.SetKeybinding("", 'k', gocui.ModNone, a.cursorUpHandler); err != nil {
-		return fmt.Errorf("keybinding 'k': %w", err)
+	if err := a.setKeyBinding("", keys.NavUp, a.cursorUpHandler); err != nil {
+		return fmt.Errorf("keybinding nav_up (%s): %w", keys.NavUp, err)
 	}
-	if err := a.gui.SetKeybinding("", 'h', gocui.ModNone, a.cursorLeftHandler); err != nil {
-		return fmt.Errorf("keybinding 'h': %w", err)
+	if err := a.setKeyBinding("", keys.NavLeft, a.cursorLeftHandler); err != nil {
+		return fmt.Errorf("keybinding nav_left (%s): %w", keys.NavLeft, err)
 	}
-	if err := a.gui.SetKeybinding("", 'l', gocui.ModNone, a.cursorRightHandler); err != nil {
-		return fmt.Errorf("keybinding 'l': %w", err)
+	if err := a.setKeyBinding("", keys.NavRight, a.cursorRightHandler); err != nil {
+		return fmt.Errorf("keybinding nav_right (%s): %w", keys.NavRight, err)
 	}
 
 	// Set up controller-specific keybindings
@@ -318,6 +325,19 @@ func (a *App) setupKeybindings() error {
 	}
 
 	return nil
+}
+
+// setKeyBinding parses a key string and sets a keybinding.
+func (a *App) setKeyBinding(viewName, keyStr string, handler func(*gocui.Gui, *gocui.View) error) error {
+	key, err := config.ParseKeyPreserveCase(keyStr)
+	if err != nil {
+		return err
+	}
+
+	if key.IsRune() {
+		return a.gui.SetKeybinding(viewName, key.Rune(), key.Mod, handler)
+	}
+	return a.gui.SetKeybinding(viewName, key.GocuiKey(), key.Mod, handler)
 }
 
 // Handlers

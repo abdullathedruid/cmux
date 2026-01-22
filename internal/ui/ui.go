@@ -5,9 +5,28 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/abdullathedruid/cmux/internal/config"
 	"github.com/abdullathedruid/cmux/internal/state"
+	"github.com/jesseduffield/gocui"
 	"github.com/mattn/go-runewidth"
 )
+
+// theme holds the current theme configuration.
+var theme *config.Theme
+
+// SetTheme sets the global theme configuration.
+func SetTheme(t *config.Theme) {
+	theme = t
+}
+
+// GetTheme returns the current theme configuration.
+func GetTheme() *config.Theme {
+	if theme == nil {
+		defaultTheme := config.DefaultTheme()
+		theme = &defaultTheme
+	}
+	return theme
+}
 
 // Colors and styles for the TUI
 const (
@@ -24,6 +43,14 @@ const (
 
 // StatusIcon returns the icon for a session status.
 func StatusIcon(attached bool, status state.SessionStatus) string {
+	t := GetTheme()
+
+	statusKey := statusToKey(attached, status)
+	if style, ok := t.Status[statusKey]; ok && style.Icon != "" {
+		return style.Icon
+	}
+
+	// Fallback defaults
 	if attached {
 		return "●" // Filled circle for attached
 	}
@@ -45,6 +72,14 @@ func StatusIcon(attached bool, status state.SessionStatus) string {
 
 // StatusColor returns the color for a session status.
 func StatusColor(attached bool, status state.SessionStatus) string {
+	t := GetTheme()
+
+	statusKey := statusToKey(attached, status)
+	if style, ok := t.Status[statusKey]; ok && style.Color != "" {
+		return ColorNameToANSI(style.Color)
+	}
+
+	// Fallback defaults
 	if attached {
 		return ColorGreen
 	}
@@ -64,6 +99,14 @@ func StatusColor(attached bool, status state.SessionStatus) string {
 
 // StatusText returns the text for a session status.
 func StatusText(attached bool, status state.SessionStatus) string {
+	t := GetTheme()
+
+	statusKey := statusToKey(attached, status)
+	if style, ok := t.Status[statusKey]; ok && style.Label != "" {
+		return style.Label
+	}
+
+	// Fallback defaults
 	if attached {
 		return "ATTACHED"
 	}
@@ -80,6 +123,75 @@ func StatusText(attached bool, status state.SessionStatus) string {
 		return "DONE"
 	default:
 		return "IDLE"
+	}
+}
+
+// statusToKey converts attached/status to the theme status key.
+func statusToKey(attached bool, status state.SessionStatus) string {
+	if attached {
+		return "attached"
+	}
+	switch status {
+	case state.StatusActive:
+		return "active"
+	case state.StatusTool:
+		return "tool"
+	case state.StatusThinking:
+		return "thinking"
+	case state.StatusNeedsInput:
+		return "input"
+	case state.StatusStopped:
+		return "stopped"
+	default:
+		return "idle"
+	}
+}
+
+// ColorNameToANSI converts a color name to an ANSI escape code.
+func ColorNameToANSI(name string) string {
+	switch strings.ToLower(name) {
+	case "black":
+		return "\033[30m"
+	case "red":
+		return "\033[31m"
+	case "green":
+		return ColorGreen
+	case "yellow":
+		return ColorYellow
+	case "blue":
+		return ColorBlue
+	case "magenta":
+		return ColorMagenta
+	case "cyan":
+		return ColorCyan
+	case "white":
+		return ColorWhite
+	default:
+		return ColorReset
+	}
+}
+
+// ColorNameToGocui converts a color name to a gocui.Attribute.
+func ColorNameToGocui(name string) gocui.Attribute {
+	switch strings.ToLower(name) {
+	case "black":
+		return gocui.ColorBlack
+	case "red":
+		return gocui.ColorRed
+	case "green":
+		return gocui.ColorGreen
+	case "yellow":
+		return gocui.ColorYellow
+	case "blue":
+		return gocui.ColorBlue
+	case "magenta":
+		return gocui.ColorMagenta
+	case "cyan":
+		return gocui.ColorCyan
+	case "white":
+		return gocui.ColorWhite
+	default:
+		return gocui.ColorDefault
 	}
 }
 
