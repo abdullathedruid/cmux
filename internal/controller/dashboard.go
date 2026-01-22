@@ -73,6 +73,9 @@ func (c *DashboardController) Keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding(dashboardViewName, 'r', gocui.ModNone, c.refresh); err != nil {
 		return err
 	}
+	if err := g.SetKeybinding(dashboardViewName, 'd', gocui.ModNone, c.showDiff); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -446,6 +449,17 @@ func (c *DashboardController) deleteSession(g *gocui.Gui, v *gocui.View) error {
 func (c *DashboardController) refresh(g *gocui.Gui, v *gocui.View) error {
 	if c.ctx.OnRefresh != nil {
 		return c.ctx.OnRefresh()
+	}
+	return nil
+}
+
+func (c *DashboardController) showDiff(g *gocui.Gui, v *gocui.View) error {
+	sess := c.ctx.State.GetSelectedSession()
+	if sess == nil {
+		return nil
+	}
+	if c.ctx.OnShowDiff != nil {
+		return c.ctx.OnShowDiff(sess.Name)
 	}
 	return nil
 }
