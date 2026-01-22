@@ -253,15 +253,12 @@ func (c *SessionsController) renderDetails(g *gocui.Gui) error {
 	// Tool history
 	if len(sess.ToolHistory) > 0 {
 		fmt.Fprintln(v, "")
-		fmt.Fprintln(v, "  Recent tools:")
+		fmt.Fprintln(v, "  Tool history:")
 		maxLen := width - 6
 		if maxLen < 20 {
 			maxLen = 20
 		}
-		for i, entry := range sess.ToolHistory {
-			if i >= 5 { // Show max 5 tools
-				break
-			}
+		for _, entry := range sess.ToolHistory {
 			result := ""
 			if entry.Result != "" {
 				result = " → " + entry.Result

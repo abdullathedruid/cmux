@@ -61,7 +61,7 @@ func ReadStatus(sessionName string) (status string, tool string, summary string,
 // ReadFullStatus reads the complete status for a given tmux session name.
 // It combines real-time status from hooks with historical data from the JSONL transcript.
 func ReadFullStatus(sessionName string) SessionStatus {
-	return ReadFullStatusWithHistory(sessionName, 10)
+	return ReadFullStatusWithHistory(sessionName, 100)
 }
 
 // ReadFullStatusWithHistory reads complete status with configurable history depth.
