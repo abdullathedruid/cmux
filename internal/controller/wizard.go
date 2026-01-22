@@ -449,22 +449,40 @@ func (c *WizardController) selectBranch(g *gocui.Gui) error {
 		return nil
 	}
 
-	selectedItem := items[c.selected]
+	// Worktrees are listed first in getBranchItems(), so we can use the index
+	// to determine if user selected a worktree or a plain branch
+	if c.selected < len(c.worktrees) {
+		wt := c.worktrees[c.selected]
+		return c.createSessionForPath(g, wt.Path, wt.Branch)
+	}
 
-	// Check if it's a worktree
+	// It's a branch without a worktree - create one
+	branchIndex := c.selected - len(c.worktrees)
+
+	// Build the list of branches without worktrees (same logic as getBranchItems)
+	worktreeBranches := make(map[string]bool)
 	for _, wt := range c.worktrees {
-		if strings.Contains(selectedItem, wt.Branch) {
-			return c.createSessionForPath(g, wt.Path, wt.Branch)
+		worktreeBranches[wt.Branch] = true
+	}
+
+	var branchesWithoutWorktree []string
+	for _, branch := range c.branches {
+		if !worktreeBranches[branch] {
+			branchesWithoutWorktree = append(branchesWithoutWorktree, branch)
 		}
 	}
 
-	// It's a branch - create worktree
-	worktreePath, err := git.CreateWorktree(c.selectedRepo, selectedItem, false)
+	if branchIndex >= len(branchesWithoutWorktree) {
+		return nil
+	}
+
+	branchName := branchesWithoutWorktree[branchIndex]
+	worktreePath, err := git.CreateWorktree(c.selectedRepo, branchName, false)
 	if err != nil {
 		return err
 	}
 
-	return c.createSessionForPath(g, worktreePath, selectedItem)
+	return c.createSessionForPath(g, worktreePath, branchName)
 }
 
 func (c *WizardController) createOnMainBranch(g *gocui.Gui) error {
