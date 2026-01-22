@@ -303,7 +303,7 @@ func (c *RealClient) DisplayDiffPopup(workdir string) error {
 		"-w", "90%", // Width
 		"-h", "90%", // Height
 		"-d", workdir, // Set working directory
-		"git", "diff", "HEAD",
+		"git", "diff",
 	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
