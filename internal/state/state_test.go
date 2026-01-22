@@ -79,11 +79,11 @@ func TestSelectPrevAtStart(t *testing.T) {
 
 	s.UpdateSessions(sessions)
 	s.SelectFirst()
-	s.SelectPrev() // Should stay at first
+	s.SelectPrev() // Should wrap to last
 
 	selected := s.GetSelectedSessionName()
-	if selected != "first" {
-		t.Errorf("expected 'first' after SelectPrev at start, got '%s'", selected)
+	if selected != "second" {
+		t.Errorf("expected 'second' after SelectPrev at start (wrap), got '%s'", selected)
 	}
 }
 
@@ -97,11 +97,11 @@ func TestSelectNextAtEnd(t *testing.T) {
 
 	s.UpdateSessions(sessions)
 	s.SetSelectedSession("second")
-	s.SelectNext() // Should stay at last
+	s.SelectNext() // Should wrap to first
 
 	selected := s.GetSelectedSessionName()
-	if selected != "second" {
-		t.Errorf("expected 'second' after SelectNext at end, got '%s'", selected)
+	if selected != "first" {
+		t.Errorf("expected 'first' after SelectNext at end (wrap), got '%s'", selected)
 	}
 }
 
