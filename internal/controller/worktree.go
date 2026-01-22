@@ -84,7 +84,7 @@ func (c *WorktreeController) IsVisible() bool {
 
 // Show shows the worktree picker for the current directory.
 func (c *WorktreeController) Show(g *gocui.Gui) error {
-	// Get current working directory and find repo
+	// First try the current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -92,7 +92,13 @@ func (c *WorktreeController) Show(g *gocui.Gui) error {
 
 	repoPath, err := git.FindRepoRoot(cwd)
 	if err != nil {
-		return fmt.Errorf("not in a git repository")
+		// Not in a git repo - try to use the selected session's repo
+		sess := c.ctx.State.GetSelectedSession()
+		if sess != nil && sess.RepoPath != "" {
+			repoPath = sess.RepoPath
+		} else {
+			return fmt.Errorf("not in a git repository and no session selected")
+		}
 	}
 
 	c.repoPath = repoPath
