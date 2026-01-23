@@ -20,8 +20,24 @@ import (
 	"github.com/vito/midterm"
 )
 
+// Mode represents the current input mode.
+type Mode int
+
+const (
+	ModeNormal Mode = iota
+	ModeTerminal
+)
+
+// AppState holds the global application state.
+type AppState struct {
+	mode       Mode
+	activePaneIdx int
+	mu         sync.Mutex
+}
+
 // Pane represents a single pane with its control mode connection and terminal emulator.
 type Pane struct {
+	index    int
 	name     string
 	ctrl     *ControlMode
 	term     *SafeTerminal
@@ -331,6 +347,7 @@ func main() {
 		}
 
 		panes[i] = &Pane{
+			index:    i + 1, // 1-indexed for display
 			name:     session,
 			ctrl:     ctrl,
 			term:     term,
@@ -344,6 +361,12 @@ func main() {
 			p.ctrl.Close()
 		}
 	}()
+
+	// Initialize app state
+	state := &AppState{
+		mode:          ModeNormal,
+		activePaneIdx: 0,
+	}
 
 	// Process output goroutines for each pane
 	for _, p := range panes {
@@ -359,10 +382,10 @@ func main() {
 	}
 
 	// Set up layout
-	g.SetManagerFunc(multiPaneLayoutFunc(panes))
+	g.SetManagerFunc(multiPaneLayoutFunc(panes, state))
 
 	// Set up keybindings
-	if err := setupMultiPaneKeybindings(g, panes); err != nil {
+	if err := setupMultiPaneKeybindings(g, panes, state); err != nil {
 		fmt.Fprintf(os.Stderr, "Error setting up keybindings: %v\n", err)
 		os.Exit(1)
 	}
@@ -384,7 +407,7 @@ func main() {
 	}
 }
 
-func multiPaneLayoutFunc(panes []*Pane) func(*gocui.Gui) error {
+func multiPaneLayoutFunc(panes []*Pane, state *AppState) func(*gocui.Gui) error {
 	firstCall := true
 	lastMaxX, lastMaxY := 0, 0
 	lastLayouts := make([]Layout, len(panes))
@@ -399,6 +422,17 @@ func multiPaneLayoutFunc(panes []*Pane) func(*gocui.Gui) error {
 			lastMaxX, lastMaxY = maxX, maxY
 		} else {
 			layouts = lastLayouts
+		}
+
+		state.mu.Lock()
+		currentMode := state.mode
+		activePaneIdx := state.activePaneIdx
+		state.mu.Unlock()
+
+		// Mode indicator for title
+		modeStr := "NORMAL"
+		if currentMode == ModeTerminal {
+			modeStr = "TERMINAL"
 		}
 
 		for i, p := range panes {
@@ -423,40 +457,45 @@ func multiPaneLayoutFunc(panes []*Pane) func(*gocui.Gui) error {
 				}
 			}
 
-			// Set up view properties
-			v.Title = fmt.Sprintf(" %s ", p.name)
+			// Set up view properties with numbered title
+			isActive := i == activePaneIdx
+			if isActive {
+				v.Title = fmt.Sprintf(" [%s] %d: %s ", modeStr, p.index, p.name)
+			} else {
+				v.Title = fmt.Sprintf(" %d: %s ", p.index, p.name)
+			}
 			v.Frame = true
 			v.Wrap = false
-			v.Editable = true
-			v.Editor = gocui.EditorFunc(makeTerminalEditor(p.ctrl))
+			v.Editable = currentMode == ModeTerminal && isActive
+			v.Editor = gocui.EditorFunc(makeTerminalEditor(p.ctrl, state))
 
 			// Render terminal buffer to view
 			v.Clear()
 			renderTerminal(v, p.term)
 
-			// Set cursor position for current view
-			currentView := g.CurrentView()
-			if currentView != nil && currentView.Name() == p.viewName {
-				p.term.mu.Lock()
-				cursor := p.term.Cursor
-				cursorVisible := p.term.CursorVisible
-				p.term.mu.Unlock()
-
-				if cursorVisible {
-					v.SetCursor(cursor.X, cursor.Y)
-					g.Cursor = true
-				} else {
-					g.Cursor = false
-				}
-			}
 		}
 
-		// Set focus to first pane on first call
-		if firstCall && len(panes) > 0 {
-			if _, err := g.SetCurrentView(panes[0].viewName); err != nil {
+		// Set focus to active pane and handle cursor
+		if len(panes) > 0 {
+			activePane := panes[activePaneIdx]
+			if _, err := g.SetCurrentView(activePane.viewName); err != nil && firstCall {
 				return err
 			}
 			firstCall = false
+
+			// Set cursor after view is focused
+			if currentMode == ModeTerminal {
+				activePane.term.mu.Lock()
+				cursor := activePane.term.Cursor
+				activePane.term.mu.Unlock()
+
+				if v, err := g.View(activePane.viewName); err == nil {
+					v.SetCursor(cursor.X, cursor.Y)
+				}
+				g.Cursor = true
+			} else {
+				g.Cursor = false
+			}
 		}
 
 		// Save layouts for next comparison
@@ -488,177 +527,283 @@ func renderTerminal(v *gocui.View, term *SafeTerminal) {
 	fmt.Fprint(v, sb.String())
 }
 
-func setupMultiPaneKeybindings(g *gocui.Gui, panes []*Pane) error {
-	// Build a map from view name to pane
-	paneMap := make(map[string]*Pane)
-	for _, p := range panes {
-		paneMap[p.viewName] = p
+func setupMultiPaneKeybindings(g *gocui.Gui, panes []*Pane, state *AppState) error {
+	// Build a map from view name to pane index
+	paneIndexMap := make(map[string]int)
+	for i, p := range panes {
+		paneIndexMap[p.viewName] = i
 	}
 
-	// Helper to get control mode for current view
-	getCtrl := func(g *gocui.Gui) *ControlMode {
-		v := g.CurrentView()
-		if v == nil {
-			return nil
-		}
-		if p, ok := paneMap[v.Name()]; ok {
-			return p.ctrl
+	// Helper to get control mode for active pane
+	getActiveCtrl := func() *ControlMode {
+		state.mu.Lock()
+		idx := state.activePaneIdx
+		state.mu.Unlock()
+		if idx >= 0 && idx < len(panes) {
+			return panes[idx].ctrl
 		}
 		return nil
 	}
 
-	// Quit on Ctrl+C
-	if err := g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, quit); err != nil {
-		return err
-	}
-	// Also quit on Ctrl+\ as backup
-	if err := g.SetKeybinding("", gocui.KeyCtrlBackslash, gocui.ModNone, quit); err != nil {
-		return err
+	// Helper to check if in terminal mode
+	isTerminalMode := func() bool {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		return state.mode == ModeTerminal
 	}
 
-	// Tab to cycle through panes
-	if err := g.SetKeybinding("", gocui.KeyTab, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		return cyclePanes(g, panes, 1)
+	// Helper to set active pane
+	setActivePane := func(idx int) {
+		if idx >= 0 && idx < len(panes) {
+			state.mu.Lock()
+			state.activePaneIdx = idx
+			state.mu.Unlock()
+		}
+	}
+
+	// Helper to move to adjacent pane
+	movePaneDirection := func(g *gocui.Gui, dx, dy int) error {
+		state.mu.Lock()
+		currentIdx := state.activePaneIdx
+		state.mu.Unlock()
+
+		// Simple navigation: for now just cycle through panes
+		// TODO: implement spatial navigation based on layout
+		newIdx := currentIdx
+		if dx > 0 || dy > 0 {
+			newIdx = (currentIdx + 1) % len(panes)
+		} else if dx < 0 || dy < 0 {
+			newIdx = (currentIdx - 1 + len(panes)) % len(panes)
+		}
+
+		setActivePane(newIdx)
+		return nil
+	}
+
+	// === GLOBAL KEYBINDINGS ===
+
+	// Ctrl+Q: Exit terminal mode (works in both modes, but only matters in terminal mode)
+	if err := g.SetKeybinding("", gocui.KeyCtrlQ, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		state.mu.Lock()
+		state.mode = ModeNormal
+		state.mu.Unlock()
+		return nil
 	}); err != nil {
 		return err
 	}
 
-	// Shift+Tab to cycle backwards (using Ctrl+[ as alternative)
-	if err := g.SetKeybinding("", gocui.KeyBacktab, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		return cyclePanes(g, panes, -1)
+	// === NORMAL MODE KEYBINDINGS ===
+
+	// q: Quit application (normal mode only)
+	if err := g.SetKeybinding("", 'q', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if isTerminalMode() {
+			// Forward 'q' to terminal
+			if ctrl := getActiveCtrl(); ctrl != nil {
+				return ctrl.SendLiteralKeys("q")
+			}
+			return nil
+		}
+		return gocui.ErrQuit
 	}); err != nil {
 		return err
 	}
 
-	// Set up keybindings for each pane view
-	for _, p := range panes {
-		pane := p // capture for closure
-
-		// Quit bindings for each pane
-		if err := g.SetKeybinding(pane.viewName, gocui.KeyCtrlC, gocui.ModNone, quit); err != nil {
-			return err
-		}
-		if err := g.SetKeybinding(pane.viewName, gocui.KeyCtrlBackslash, gocui.ModNone, quit); err != nil {
-			return err
-		}
-
-		// Tab to cycle panes (override the terminal's tab)
-		if err := g.SetKeybinding(pane.viewName, gocui.KeyTab, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-			return cyclePanes(g, panes, 1)
+	// i or Enter: Enter terminal mode
+	for _, key := range []rune{'i'} {
+		k := key
+		if err := g.SetKeybinding("", k, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+			if isTerminalMode() {
+				// Forward to terminal
+				if ctrl := getActiveCtrl(); ctrl != nil {
+					return ctrl.SendLiteralKeys(string(k))
+				}
+				return nil
+			}
+			state.mu.Lock()
+			state.mode = ModeTerminal
+			state.mu.Unlock()
+			return nil
 		}); err != nil {
 			return err
 		}
+	}
 
-		// Forward special keys to the pane's terminal
-		keyMappings := map[gocui.Key]string{
-			gocui.KeyEnter:      "Enter",
-			gocui.KeyEsc:        "Escape",
-			gocui.KeyBackspace:  "BSpace",
-			gocui.KeyBackspace2: "BSpace",
-			gocui.KeyDelete:     "DC",
-			gocui.KeyArrowUp:    "Up",
-			gocui.KeyArrowDown:  "Down",
-			gocui.KeyArrowLeft:  "Left",
-			gocui.KeyArrowRight: "Right",
-			gocui.KeyHome:       "Home",
-			gocui.KeyEnd:        "End",
-			gocui.KeyPgup:       "PPage",
-			gocui.KeyPgdn:       "NPage",
-			gocui.KeySpace:      "Space",
-		}
-
-		for key, tmuxKey := range keyMappings {
-			tk := tmuxKey // capture for closure
-			if err := g.SetKeybinding(pane.viewName, key, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-				ctrl := getCtrl(g)
-				if ctrl == nil {
-					return nil
-				}
-				return ctrl.SendKeys(tk)
-			}); err != nil {
-				return err
+	if err := g.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if isTerminalMode() {
+			// Forward Enter to terminal
+			if ctrl := getActiveCtrl(); ctrl != nil {
+				return ctrl.SendKeys("Enter")
 			}
+			return nil
 		}
+		state.mu.Lock()
+		state.mode = ModeTerminal
+		state.mu.Unlock()
+		return nil
+	}); err != nil {
+		return err
+	}
 
-		// Forward Ctrl key combinations (except Ctrl+C and Ctrl+\ which are quit)
-		ctrlMappings := map[gocui.Key]string{
-			gocui.KeyCtrlA: "C-a",
-			gocui.KeyCtrlB: "C-b",
-			gocui.KeyCtrlD: "C-d",
-			gocui.KeyCtrlE: "C-e",
-			gocui.KeyCtrlF: "C-f",
-			gocui.KeyCtrlG: "C-g",
-			gocui.KeyCtrlH: "C-h",
-			gocui.KeyCtrlJ: "C-j",
-			gocui.KeyCtrlK: "C-k",
-			gocui.KeyCtrlL: "C-l",
-			gocui.KeyCtrlN: "C-n",
-			gocui.KeyCtrlO: "C-o",
-			gocui.KeyCtrlP: "C-p",
-			gocui.KeyCtrlQ: "C-q",
-			gocui.KeyCtrlR: "C-r",
-			gocui.KeyCtrlS: "C-s",
-			gocui.KeyCtrlT: "C-t",
-			gocui.KeyCtrlU: "C-u",
-			gocui.KeyCtrlV: "C-v",
-			gocui.KeyCtrlW: "C-w",
-			gocui.KeyCtrlX: "C-x",
-			gocui.KeyCtrlY: "C-y",
-			gocui.KeyCtrlZ: "C-z",
-		}
+	// h/j/k/l: Navigate panes (normal mode) or forward to terminal (terminal mode)
+	navKeys := map[rune]struct{ dx, dy int }{
+		'h': {-1, 0},
+		'l': {1, 0},
+		'k': {0, -1},
+		'j': {0, 1},
+	}
 
-		for key, tmuxKey := range ctrlMappings {
-			tk := tmuxKey // capture for closure
-			if err := g.SetKeybinding(pane.viewName, key, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-				ctrl := getCtrl(g)
-				if ctrl == nil {
-					return nil
+	for key, dir := range navKeys {
+		k := key
+		d := dir
+		if err := g.SetKeybinding("", k, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+			if isTerminalMode() {
+				if ctrl := getActiveCtrl(); ctrl != nil {
+					return ctrl.SendLiteralKeys(string(k))
 				}
-				return ctrl.SendKeys(tk)
-			}); err != nil {
-				return err
+				return nil
 			}
+			return movePaneDirection(g, d.dx, d.dy)
+		}); err != nil {
+			return err
+		}
+	}
+
+	// 1-9: Jump to pane N
+	for i := 1; i <= 9; i++ {
+		paneIdx := i - 1 // 0-indexed
+		key := rune('0' + i)
+		if err := g.SetKeybinding("", key, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+			if isTerminalMode() {
+				if ctrl := getActiveCtrl(); ctrl != nil {
+					return ctrl.SendLiteralKeys(string(key))
+				}
+				return nil
+			}
+			if paneIdx < len(panes) {
+				setActivePane(paneIdx)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+
+	// Arrow keys: Navigate in normal mode, forward in terminal mode
+	arrowMappings := map[gocui.Key]struct {
+		dx, dy  int
+		tmuxKey string
+	}{
+		gocui.KeyArrowLeft:  {-1, 0, "Left"},
+		gocui.KeyArrowRight: {1, 0, "Right"},
+		gocui.KeyArrowUp:    {0, -1, "Up"},
+		gocui.KeyArrowDown:  {0, 1, "Down"},
+	}
+
+	for key, mapping := range arrowMappings {
+		k := key
+		m := mapping
+		if err := g.SetKeybinding("", k, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+			if isTerminalMode() {
+				if ctrl := getActiveCtrl(); ctrl != nil {
+					return ctrl.SendKeys(m.tmuxKey)
+				}
+				return nil
+			}
+			return movePaneDirection(g, m.dx, m.dy)
+		}); err != nil {
+			return err
+		}
+	}
+
+	// === TERMINAL MODE ONLY KEYBINDINGS ===
+
+	// Special keys that only make sense in terminal mode
+	terminalOnlyKeys := map[gocui.Key]string{
+		gocui.KeyEsc:        "Escape",
+		gocui.KeyBackspace:  "BSpace",
+		gocui.KeyBackspace2: "BSpace",
+		gocui.KeyDelete:     "DC",
+		gocui.KeyHome:       "Home",
+		gocui.KeyEnd:        "End",
+		gocui.KeyPgup:       "PPage",
+		gocui.KeyPgdn:       "NPage",
+		gocui.KeySpace:      "Space",
+		gocui.KeyTab:        "Tab",
+	}
+
+	for key, tmuxKey := range terminalOnlyKeys {
+		tk := tmuxKey
+		if err := g.SetKeybinding("", key, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+			if !isTerminalMode() {
+				return nil
+			}
+			if ctrl := getActiveCtrl(); ctrl != nil {
+				return ctrl.SendKeys(tk)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+
+	// Ctrl key combinations (except Ctrl+Q which is mode switch)
+	ctrlMappings := map[gocui.Key]string{
+		gocui.KeyCtrlA:         "C-a",
+		gocui.KeyCtrlB:         "C-b",
+		gocui.KeyCtrlC:         "C-c",
+		gocui.KeyCtrlD:         "C-d",
+		gocui.KeyCtrlE:         "C-e",
+		gocui.KeyCtrlF:         "C-f",
+		gocui.KeyCtrlG:         "C-g",
+		gocui.KeyCtrlH:         "C-h",
+		gocui.KeyCtrlJ:         "C-j",
+		gocui.KeyCtrlK:         "C-k",
+		gocui.KeyCtrlL:         "C-l",
+		gocui.KeyCtrlN:         "C-n",
+		gocui.KeyCtrlO:         "C-o",
+		gocui.KeyCtrlP:         "C-p",
+		gocui.KeyCtrlR:         "C-r",
+		gocui.KeyCtrlS:         "C-s",
+		gocui.KeyCtrlT:         "C-t",
+		gocui.KeyCtrlU:         "C-u",
+		gocui.KeyCtrlV:         "C-v",
+		gocui.KeyCtrlW:         "C-w",
+		gocui.KeyCtrlX:         "C-x",
+		gocui.KeyCtrlY:         "C-y",
+		gocui.KeyCtrlZ:         "C-z",
+		gocui.KeyCtrlBackslash: "C-\\",
+	}
+
+	for key, tmuxKey := range ctrlMappings {
+		tk := tmuxKey
+		if err := g.SetKeybinding("", key, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+			if !isTerminalMode() {
+				return nil
+			}
+			if ctrl := getActiveCtrl(); ctrl != nil {
+				return ctrl.SendKeys(tk)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-// cyclePanes switches focus to the next or previous pane.
-func cyclePanes(g *gocui.Gui, panes []*Pane, direction int) error {
-	if len(panes) <= 1 {
-		return nil
-	}
-
-	currentView := g.CurrentView()
-	if currentView == nil {
-		_, err := g.SetCurrentView(panes[0].viewName)
-		return err
-	}
-
-	// Find current pane index
-	currentIdx := -1
-	for i, p := range panes {
-		if p.viewName == currentView.Name() {
-			currentIdx = i
-			break
-		}
-	}
-
-	if currentIdx == -1 {
-		_, err := g.SetCurrentView(panes[0].viewName)
-		return err
-	}
-
-	// Calculate next index with wrapping
-	nextIdx := (currentIdx + direction + len(panes)) % len(panes)
-	_, err := g.SetCurrentView(panes[nextIdx].viewName)
-	return err
-}
-
 // makeTerminalEditor creates an editor function that forwards character input to tmux.
-func makeTerminalEditor(ctrl *ControlMode) func(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) bool {
+func makeTerminalEditor(ctrl *ControlMode, state *AppState) func(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) bool {
 	return func(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) bool {
+		state.mu.Lock()
+		mode := state.mode
+		state.mu.Unlock()
+
+		// Only forward input in terminal mode
+		if mode != ModeTerminal {
+			return false
+		}
+
 		// Only handle printable characters
 		if ch != 0 && mod == gocui.ModNone {
 			ctrl.SendLiteralKeys(string(ch))
@@ -666,8 +811,4 @@ func makeTerminalEditor(ctrl *ControlMode) func(v *gocui.View, key gocui.Key, ch
 		}
 		return false
 	}
-}
-
-func quit(g *gocui.Gui, v *gocui.View) error {
-	return gocui.ErrQuit
 }
