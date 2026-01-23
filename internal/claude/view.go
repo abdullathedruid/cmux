@@ -3,6 +3,7 @@ package claude
 import (
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -151,7 +152,7 @@ func (v *View) UpdateFromHookEvent(event HookEvent) {
 			StartTime: time.Now(),
 			Input:     event.ToolInput,
 		}
-		v.session.CurrentTool.InputSummary = summarizeToolInput(event.ToolName, event.ToolInput)
+		v.session.CurrentTool.InputSummary = SummarizeToolInput(event.ToolName, event.ToolInput)
 
 	case "PostToolUse":
 		v.session.Status = StatusActive
@@ -242,8 +243,9 @@ func (v *View) MarkDirty() {
 	v.mu.Unlock()
 }
 
-// summarizeToolInput creates a short description of a tool call.
-func summarizeToolInput(toolName string, input []byte) string {
+// SummarizeToolInput creates a short description of a tool call.
+// Exported for use by transcript parser.
+func SummarizeToolInput(toolName string, input []byte) string {
 	if len(input) == 0 {
 		return toolName
 	}
@@ -257,10 +259,7 @@ func summarizeToolInput(toolName string, input []byte) string {
 	switch toolName {
 	case "Bash":
 		if cmd, ok := data["command"].(string); ok {
-			if len(cmd) > 60 {
-				return "$ " + cmd[:57] + "..."
-			}
-			return "$ " + cmd
+			return "$ " + collapseAndTruncate(cmd, 57)
 		}
 
 	case "Read":
@@ -280,21 +279,40 @@ func summarizeToolInput(toolName string, input []byte) string {
 
 	case "Glob":
 		if pattern, ok := data["pattern"].(string); ok {
-			return "Glob: " + pattern
+			return "Glob: " + collapseAndTruncate(pattern, 50)
 		}
 
 	case "Grep":
 		if pattern, ok := data["pattern"].(string); ok {
-			return "Grep: " + pattern
+			return "Grep: " + collapseAndTruncate(pattern, 50)
 		}
 
 	case "Task":
 		if desc, ok := data["description"].(string); ok {
-			return "Task: " + desc
+			return "Task: " + collapseAndTruncate(desc, 50)
 		}
 	}
 
 	return toolName
+}
+
+// collapseAndTruncate replaces newlines with spaces and truncates to maxLen.
+func collapseAndTruncate(s string, maxLen int) string {
+	// Replace newlines and collapse whitespace
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\t", " ")
+
+	// Collapse multiple spaces
+	for strings.Contains(s, "  ") {
+		s = strings.ReplaceAll(s, "  ", " ")
+	}
+	s = strings.TrimSpace(s)
+
+	if len(s) > maxLen {
+		return s[:maxLen-3] + "..."
+	}
+	return s
 }
 
 func jsonUnmarshal(data []byte, v any) error {

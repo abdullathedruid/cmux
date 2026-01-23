@@ -192,14 +192,16 @@ func (r *TranscriptReader) parseAssistantMessage(uuid, timestamp string, raw jso
 
 		case "tool_use":
 			var t struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
+				ID    string          `json:"id"`
+				Name  string          `json:"name"`
+				Input json.RawMessage `json:"input"`
 			}
 			json.Unmarshal(block, &t)
 			m.ToolCalls = append(m.ToolCalls, ToolCall{
-				ID:     t.ID,
-				Name:   t.Name,
-				Status: ToolComplete,
+				ID:           t.ID,
+				Name:         t.Name,
+				Status:       ToolComplete,
+				InputSummary: SummarizeToolInput(t.Name, t.Input),
 			})
 		}
 	}

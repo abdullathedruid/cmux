@@ -219,7 +219,7 @@ func (r *Renderer) renderPermissionPrompt(session *Session) string {
 	lines = append(lines, header)
 
 	// Show what's being requested
-	detail := summarizeToolInput(perm.ToolName, perm.ToolInput)
+	detail := SummarizeToolInput(perm.ToolName, perm.ToolInput)
 	if detail != "" && detail != perm.ToolName {
 		// Truncate if too long
 		maxLen := r.width - 6
