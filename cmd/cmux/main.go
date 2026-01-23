@@ -9,14 +9,20 @@ import (
 	"github.com/abdullathedruid/cmux/internal/app"
 )
 
+var structured = flag.Bool("structured", false, "Use structured view mode (renders from hooks/transcripts instead of terminal emulation)")
+
 func main() {
 	flag.Parse()
 
 	if flag.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: cmux <session-name> [session-name...]")
+		fmt.Fprintln(os.Stderr, "Usage: cmux [flags] <session-name> [session-name...]")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "cmux is a terminal multiplexer for managing multiple tmux sessions")
 		fmt.Fprintln(os.Stderr, "with vim-like modal keybindings.")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Flags:")
+		fmt.Fprintln(os.Stderr, "  -structured  Use structured view mode (renders Claude sessions from")
+		fmt.Fprintln(os.Stderr, "               hooks/transcripts instead of terminal emulation)")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Modes:")
 		fmt.Fprintln(os.Stderr, "  NORMAL   - Navigate between panes (h/j/k/l, 1-9)")
@@ -37,19 +43,39 @@ func main() {
 
 	sessions := flag.Args()
 
-	application, err := app.NewPocApp()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing application: %v\n", err)
-		os.Exit(1)
-	}
+	if *structured {
+		// Use structured view mode (renders from hooks/transcripts)
+		application, err := app.NewStructuredApp()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error initializing application: %v\n", err)
+			os.Exit(1)
+		}
 
-	if err := application.InitSessions(sessions); err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing sessions: %v\n", err)
-		os.Exit(1)
-	}
+		if err := application.InitSessions(sessions); err != nil {
+			fmt.Fprintf(os.Stderr, "Error initializing sessions: %v\n", err)
+			os.Exit(1)
+		}
 
-	if err := application.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		if err := application.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		// Use traditional terminal emulation mode
+		application, err := app.NewPocApp()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error initializing application: %v\n", err)
+			os.Exit(1)
+		}
+
+		if err := application.InitSessions(sessions); err != nil {
+			fmt.Fprintf(os.Stderr, "Error initializing sessions: %v\n", err)
+			os.Exit(1)
+		}
+
+		if err := application.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }

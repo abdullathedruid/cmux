@@ -23,6 +23,9 @@ type View struct {
 	// Dimensions
 	width  int
 	height int
+
+	// Optional filter: only accept events from this cwd
+	cwdFilter string
 }
 
 // NewView creates a new Claude view for a tmux session.
@@ -95,10 +98,29 @@ func (v *View) UpdateFromStatus(status SessionStatus, tool string, sessionID, tr
 	v.dirty = true
 }
 
+// SetCwdFilter sets a working directory filter.
+// Only events from Claude sessions with a matching cwd will be accepted.
+func (v *View) SetCwdFilter(cwd string) {
+	v.mu.Lock()
+	v.cwdFilter = cwd
+	v.mu.Unlock()
+}
+
 // UpdateFromHookEvent updates the view from a hook event.
 func (v *View) UpdateFromHookEvent(event HookEvent) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+
+	// Filter by cwd if set
+	if v.cwdFilter != "" && event.Cwd != "" && event.Cwd != v.cwdFilter {
+		return // Ignore events from different projects
+	}
+
+	// Once we have a session ID, only accept events from that same Claude session
+	// This prevents mixing events from different Claude instances in the same tmux pane
+	if v.session.ID != "" && event.SessionID != "" && v.session.ID != event.SessionID {
+		return // Ignore events from different Claude sessions
+	}
 
 	v.session.ID = event.SessionID
 	v.session.Cwd = event.Cwd
@@ -153,6 +175,11 @@ func (v *View) UpdateFromHookEvent(event HookEvent) {
 			v.session.Status = StatusNeedsInput
 			if v.session.PendingPermission != nil {
 				v.session.PendingPermission.Message = event.Message
+			} else {
+				// Notification arrived before PermissionRequest, create placeholder
+				v.session.PendingPermission = &PermissionRequest{
+					Message: event.Message,
+				}
 			}
 		}
 

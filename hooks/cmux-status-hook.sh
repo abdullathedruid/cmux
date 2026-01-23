@@ -25,8 +25,10 @@
 
 set -e
 
-DIR="${TMPDIR:-/tmp}/cmux/sessions"
-mkdir -p "$DIR"
+BASEDIR="${TMPDIR:-/tmp}/cmux"
+STATUSDIR="$BASEDIR/sessions"
+EVENTSDIR="$BASEDIR/events"
+mkdir -p "$STATUSDIR" "$EVENTSDIR"
 
 # Get tmux session name
 SESSION=$(tmux display-message -p '#{session_name}' 2>/dev/null || echo "")
@@ -34,6 +36,16 @@ SESSION=$(tmux display-message -p '#{session_name}' 2>/dev/null || echo "")
 
 # Read hook input
 INPUT=$(cat)
+
+# Log all hook data for debugging
+LOGFILE="$BASEDIR/hook-debug.log"
+echo "=== $(date -Iseconds) [tmux:$SESSION] ===" >> "$LOGFILE"
+echo "$INPUT" | jq '.' >> "$LOGFILE" 2>/dev/null || echo "$INPUT" >> "$LOGFILE"
+echo "" >> "$LOGFILE"
+
+# Append event to JSONL file for structured view
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+echo "$INPUT" | jq -c --arg ts "$TIMESTAMP" --arg tmux "$SESSION" '. + {ts: $ts, tmux_session: $tmux}' >> "$EVENTSDIR/$SESSION.jsonl"
 
 # Parse fields
 EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
@@ -72,4 +84,4 @@ jq -n \
     --arg session_id "$SESSION_ID" \
     --argjson ts "$(date +%s)" \
     '{status: $status, tool: $tool, transcript_path: $transcript, session_id: $session_id, ts: $ts}' \
-    > "$DIR/$SESSION.status"
+    > "$STATUSDIR/$SESSION.status"

@@ -193,10 +193,7 @@ func (r *Renderer) renderActivityLine(session *Session) string {
 		return "\033[33m⠋ Working...\033[0m"
 
 	case StatusNeedsInput:
-		if session.PendingPermission != nil {
-			return fmt.Sprintf("\033[1;33m⚠ Permission needed: %s\033[0m [y/n]", session.PendingPermission.ToolName)
-		}
-		return "\033[1;33m⚠ Input needed\033[0m"
+		return r.renderPermissionPrompt(session)
 
 	case StatusActive:
 		return "\033[32m● Active\033[0m"
@@ -204,6 +201,38 @@ func (r *Renderer) renderActivityLine(session *Session) string {
 	default:
 		return ""
 	}
+}
+
+func (r *Renderer) renderPermissionPrompt(session *Session) string {
+	if session.PendingPermission == nil {
+		return "\033[1;33m⚠ Input needed\033[0m"
+	}
+
+	perm := session.PendingPermission
+	var lines []string
+
+	// Header with message or tool name
+	header := fmt.Sprintf("\033[1;33m⚠ Permission needed: %s\033[0m", perm.ToolName)
+	if perm.Message != "" {
+		header = fmt.Sprintf("\033[1;33m⚠ %s\033[0m", perm.Message)
+	}
+	lines = append(lines, header)
+
+	// Show what's being requested
+	detail := summarizeToolInput(perm.ToolName, perm.ToolInput)
+	if detail != "" && detail != perm.ToolName {
+		// Truncate if too long
+		maxLen := r.width - 6
+		if len(detail) > maxLen && maxLen > 3 {
+			detail = detail[:maxLen-3] + "..."
+		}
+		lines = append(lines, fmt.Sprintf("    \033[90m%s\033[0m", detail))
+	}
+
+	// Keybinding hints (Claude uses 1/2/3 not y/n/a)
+	lines = append(lines, "\033[36m    [1] Yes  [2] Always  [3] No\033[0m")
+
+	return strings.Join(lines, "\n")
 }
 
 func (r *Renderer) renderStatusBar(session *Session) string {
