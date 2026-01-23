@@ -82,24 +82,14 @@ func (c *ControlMode) Start(width, height int) error {
 	// Start reading output
 	go c.readOutput()
 
-	// Tell tmux our window size and request initial content
+	// Force a full redraw by resizing to a different size first, then back
+	// This tricks tmux into thinking the terminal changed and needs a full redraw
+	c.Resize(width-1, height-1)
 	c.Resize(width, height)
-	c.RequestRefresh()
 
 	return nil
 }
 
-// RequestRefresh asks tmux to redraw the pane content.
-func (c *ControlMode) RequestRefresh() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Send Ctrl+L to trigger a screen redraw in most applications
-	// This is a common convention for terminal apps to redraw
-	cmd := fmt.Sprintf("send-keys -t %s C-l\n", c.session)
-	_, err := c.pty.Write([]byte(cmd))
-	return err
-}
 
 // Resize tells tmux about our new window size.
 func (c *ControlMode) Resize(width, height int) error {
