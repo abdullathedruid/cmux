@@ -78,7 +78,8 @@ func NewPocAppWithConfig(cfg *config.Config) (*PocApp, error) {
 // InitSessions initializes panes for the given tmux session names.
 func (a *PocApp) InitSessions(sessions []string) error {
 	maxX, maxY := a.gui.Size()
-	layouts := pane.CalculateLayouts(len(sessions), maxX, maxY)
+	paneMaxY := maxY - pane.StatusBarHeight
+	layouts := pane.CalculateLayouts(len(sessions), maxX, paneMaxY)
 
 	for i, session := range sessions {
 		layout := layouts[i]
@@ -150,10 +151,13 @@ func (a *PocApp) layout(g *gocui.Gui) error {
 	activePaneIdx := a.panes.ActiveIndex()
 	inputBuffer := a.input.InputBuffer()
 
+	// Reserve space for status bar at the bottom
+	paneMaxY := maxY - pane.StatusBarHeight
+
 	// Recalculate layouts if size or pane count changed
 	var layouts []pane.Layout
 	if maxX != a.lastMaxX || maxY != a.lastMaxY || len(panes) != a.lastPaneCount {
-		layouts = pane.CalculateLayouts(len(panes), maxX, maxY)
+		layouts = pane.CalculateLayouts(len(panes), maxX, paneMaxY)
 		a.lastMaxX, a.lastMaxY = maxX, maxY
 		a.lastPaneCount = len(panes)
 	} else {
@@ -202,6 +206,15 @@ func (a *PocApp) layout(g *gocui.Gui) error {
 			ui.RenderTerminal(v, p.Term)
 		}
 	}
+
+	// Render status bar at the bottom
+	statusBarView, err := g.SetView("status-bar", 0, maxY-pane.StatusBarHeight, maxX-1, maxY, 0)
+	if err != nil {
+		if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
+			return err
+		}
+	}
+	ui.ConfigureStatusBar(statusBarView, currentMode, len(panes))
 
 	// Handle input modal
 	if currentMode.IsInput() {
@@ -265,8 +278,9 @@ func (a *PocApp) layout(g *gocui.Gui) error {
 // addNewPane creates and adds a new pane for the given tmux session.
 func (a *PocApp) addNewPane(sessionName string) error {
 	maxX, maxY := a.gui.Size()
+	paneMaxY := maxY - pane.StatusBarHeight
 	paneCount := a.panes.Count()
-	layouts := pane.CalculateLayouts(paneCount+1, maxX, maxY)
+	layouts := pane.CalculateLayouts(paneCount+1, maxX, paneMaxY)
 	layout := layouts[paneCount]
 
 	width := layout.Width()

@@ -87,3 +87,44 @@ func ModalDimensions(maxX, maxY, width, height int) (x0, y0, x1, y1 int) {
 	y1 = y0 + height
 	return
 }
+
+// StatusBarContent returns the hotkey hints for the given mode.
+func StatusBarContent(mode input.Mode, paneCount int) string {
+	switch mode {
+	case input.ModeTerminal:
+		return " TERMINAL │ Ctrl+Q:normal mode │ All other keys sent to terminal"
+	case input.ModeInput:
+		return " INPUT │ Enter:confirm │ Esc:cancel │ Backspace:delete"
+	default: // ModeNormal
+		hints := " NORMAL │ hjkl/arrows:navigate │ i/Enter:terminal │ N:new worktree │ q:quit"
+		if paneCount > 1 {
+			hints = " NORMAL │ hjkl:nav │ 1-9:pane │ i/Enter:terminal │ N:new │ q:quit"
+		}
+		return hints
+	}
+}
+
+// ConfigureStatusBar sets up the status bar view with proper styling.
+func ConfigureStatusBar(v *gocui.View, mode input.Mode, paneCount int) {
+	v.Frame = false
+	v.Wrap = false
+	v.Editable = false
+
+	// Set background color based on mode
+	switch mode {
+	case input.ModeTerminal:
+		v.BgColor = gocui.ColorGreen
+	case input.ModeInput:
+		v.BgColor = gocui.ColorYellow
+		v.FgColor = gocui.ColorBlack
+	default:
+		v.BgColor = gocui.ColorBlue
+	}
+
+	if mode != input.ModeInput {
+		v.FgColor = gocui.ColorWhite | gocui.AttrBold
+	}
+
+	v.Clear()
+	fmt.Fprint(v, StatusBarContent(mode, paneCount))
+}
