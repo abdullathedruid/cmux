@@ -110,19 +110,15 @@ func ConfigureStatusBar(v *gocui.View, mode input.Mode, paneCount int) {
 	v.Wrap = false
 	v.Editable = false
 
-	// Set background color based on mode
+	// Transparent background with mode-colored text
+	v.BgColor = gocui.ColorDefault
 	switch mode {
 	case input.ModeTerminal:
-		v.BgColor = gocui.ColorGreen
+		v.FgColor = gocui.ColorGreen
 	case input.ModeInput:
-		v.BgColor = gocui.ColorYellow
-		v.FgColor = gocui.ColorBlack
+		v.FgColor = gocui.ColorYellow
 	default:
-		v.BgColor = gocui.ColorBlue
-	}
-
-	if mode != input.ModeInput {
-		v.FgColor = gocui.ColorWhite | gocui.AttrBold
+		v.FgColor = gocui.ColorBlue
 	}
 
 	v.Clear()

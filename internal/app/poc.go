@@ -151,7 +151,7 @@ func (a *PocApp) layout(g *gocui.Gui) error {
 	activePaneIdx := a.panes.ActiveIndex()
 	inputBuffer := a.input.InputBuffer()
 
-	// Reserve space for status bar at the bottom
+	// Reserve 1 visible row for status bar (panes go to maxY-1)
 	paneMaxY := maxY - pane.StatusBarHeight
 
 	// Recalculate layouts if size or pane count changed

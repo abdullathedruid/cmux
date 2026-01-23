@@ -1,7 +1,7 @@
 package pane
 
 // StatusBarHeight is the height reserved for the status bar at the bottom.
-const StatusBarHeight = 1
+const StatusBarHeight = 2
 
 // Layout represents the position and size of a pane in screen coordinates.
 type Layout struct {
