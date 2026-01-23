@@ -2,31 +2,49 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
 	"github.com/abdullathedruid/cmux/internal/app"
-	"github.com/abdullathedruid/cmux/internal/config"
 )
 
 func main() {
-	// Load configuration from file (falls back to defaults if not found)
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
+	flag.Parse()
+
+	if flag.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: cmux <session-name> [session-name...]")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "cmux is a terminal multiplexer for managing multiple tmux sessions")
+		fmt.Fprintln(os.Stderr, "with vim-like modal keybindings.")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Modes:")
+		fmt.Fprintln(os.Stderr, "  NORMAL   - Navigate between panes (h/j/k/l, 1-9)")
+		fmt.Fprintln(os.Stderr, "  TERMINAL - Send input to the active pane (i or Enter to enter)")
+		fmt.Fprintln(os.Stderr, "  INPUT    - Text input for creating new worktrees (N)")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Keys (Normal mode):")
+		fmt.Fprintln(os.Stderr, "  h/j/k/l  - Navigate between panes")
+		fmt.Fprintln(os.Stderr, "  1-9      - Jump to pane N")
+		fmt.Fprintln(os.Stderr, "  i/Enter  - Enter terminal mode")
+		fmt.Fprintln(os.Stderr, "  N        - Create new worktree and pane")
+		fmt.Fprintln(os.Stderr, "  q        - Quit")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Keys (Terminal mode):")
+		fmt.Fprintln(os.Stderr, "  Ctrl+Q   - Return to normal mode")
 		os.Exit(1)
 	}
 
-	// Ensure data directory exists
-	if err := cfg.EnsureDataDir(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating data directory: %v\n", err)
+	sessions := flag.Args()
+
+	application, err := app.NewPocApp()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing application: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Create and run the application
-	application, err := app.New(cfg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error starting cmux: %v\n", err)
+	if err := application.InitSessions(sessions); err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing sessions: %v\n", err)
 		os.Exit(1)
 	}
 
