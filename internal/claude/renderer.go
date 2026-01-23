@@ -71,11 +71,15 @@ func (r *Renderer) renderEmpty() string {
 
 func (r *Renderer) renderMessages(messages []Message, maxLines int) []string {
 	var allLines []string
+	var prevRole string
 
 	for _, msg := range messages {
-		msgLines := r.renderMessage(msg)
+		// Only show header when role changes (like a chat app grouping)
+		showHeader := msg.Role != prevRole
+		msgLines := r.renderMessageGrouped(msg, showHeader)
 		allLines = append(allLines, msgLines...)
-		allLines = append(allLines, "") // Blank line between messages
+
+		prevRole = msg.Role
 	}
 
 	// Return only the last maxLines
@@ -85,16 +89,22 @@ func (r *Renderer) renderMessages(messages []Message, maxLines int) []string {
 	return allLines
 }
 
-func (r *Renderer) renderMessage(msg Message) []string {
+func (r *Renderer) renderMessageGrouped(msg Message, showHeader bool) []string {
 	var lines []string
 
 	switch msg.Role {
 	case "user":
-		lines = append(lines, r.styleUserHeader(msg.Timestamp))
+		if showHeader {
+			lines = append(lines, "") // Blank line before new group
+			lines = append(lines, r.styleUserHeader(msg.Timestamp))
+		}
 		lines = append(lines, r.wrapText(msg.Content, r.width-4, "    ")...)
 
 	case "assistant":
-		lines = append(lines, r.styleAssistantHeader(msg.Timestamp, msg.IsComplete))
+		if showHeader {
+			lines = append(lines, "") // Blank line before new group
+			lines = append(lines, r.styleAssistantHeader(msg.Timestamp, msg.IsComplete))
+		}
 
 		// Text content
 		if msg.TextPreview != "" {
