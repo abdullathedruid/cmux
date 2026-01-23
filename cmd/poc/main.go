@@ -461,8 +461,19 @@ func multiPaneLayoutFunc(panes []*Pane, state *AppState) func(*gocui.Gui) error 
 			isActive := i == activePaneIdx
 			if isActive {
 				v.Title = fmt.Sprintf(" [%s] %d: %s ", modeStr, p.index, p.name)
+				// Bold frame for active pane using heavy box-drawing characters
+				v.FrameRunes = []rune{'━', '┃', '┏', '┓', '┗', '┛'}
+				// Color based on mode: blue for normal, green for terminal
+				if currentMode == ModeTerminal {
+					v.FrameColor = gocui.ColorGreen
+				} else {
+					v.FrameColor = gocui.ColorBlue
+				}
 			} else {
 				v.Title = fmt.Sprintf(" %d: %s ", p.index, p.name)
+				// Regular frame for inactive panes
+				v.FrameRunes = []rune{'─', '│', '┌', '┐', '└', '┘'}
+				v.FrameColor = gocui.ColorDefault
 			}
 			v.Frame = true
 			v.Wrap = false
