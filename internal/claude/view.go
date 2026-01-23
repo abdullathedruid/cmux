@@ -259,7 +259,7 @@ func SummarizeToolInput(toolName string, input []byte) string {
 	switch toolName {
 	case "Bash":
 		if cmd, ok := data["command"].(string); ok {
-			return "$ " + collapseAndTruncate(cmd, 57)
+			return "Bash(" + collapseAndTruncate(cmd, 54) + ")"
 		}
 
 	case "Read":
