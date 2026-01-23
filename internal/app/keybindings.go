@@ -92,6 +92,10 @@ func (a *PocApp) setupKeybindings() error {
 			}
 			return nil
 		}
+		// Reset scroll position when entering terminal mode
+		if p := a.panes.Active(); p != nil {
+			p.Scrollback.ScrollToBottom()
+		}
 		a.input.EnterTerminalMode()
 		return nil
 	}); err != nil {
@@ -119,6 +123,10 @@ func (a *PocApp) setupKeybindings() error {
 			}
 
 			return a.addNewPane(name)
+		}
+		// Reset scroll position when entering terminal mode
+		if p := a.panes.Active(); p != nil {
+			p.Scrollback.ScrollToBottom()
 		}
 		a.input.EnterTerminalMode()
 		return nil
@@ -195,6 +203,88 @@ func (a *PocApp) setupKeybindings() error {
 		}); err != nil {
 			return err
 		}
+	}
+
+	// === NORMAL MODE SCROLLBACK KEYBINDINGS ===
+
+	// Ctrl+U: Scroll up half page (normal mode)
+	if err := g.SetKeybinding("", gocui.KeyCtrlU, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if getMode().IsTerminal() {
+			if ctrl := getActiveCtrl(); ctrl != nil {
+				return ctrl.SendKeys("C-u")
+			}
+			return nil
+		}
+		if p := a.panes.Active(); p != nil {
+			p.Scrollback.ScrollUp(12) // Half page ~12 lines
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Ctrl+D: Scroll down half page (normal mode)
+	if err := g.SetKeybinding("", gocui.KeyCtrlD, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if getMode().IsTerminal() {
+			if ctrl := getActiveCtrl(); ctrl != nil {
+				return ctrl.SendKeys("C-d")
+			}
+			return nil
+		}
+		if p := a.panes.Active(); p != nil {
+			p.Scrollback.ScrollDown(12)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Ctrl+B: Scroll up full page (normal mode)
+	if err := g.SetKeybinding("", gocui.KeyCtrlB, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if getMode().IsTerminal() {
+			if ctrl := getActiveCtrl(); ctrl != nil {
+				return ctrl.SendKeys("C-b")
+			}
+			return nil
+		}
+		if p := a.panes.Active(); p != nil {
+			p.Scrollback.ScrollUp(24) // Full page ~24 lines
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Ctrl+F: Scroll down full page (normal mode)
+	if err := g.SetKeybinding("", gocui.KeyCtrlF, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if getMode().IsTerminal() {
+			if ctrl := getActiveCtrl(); ctrl != nil {
+				return ctrl.SendKeys("C-f")
+			}
+			return nil
+		}
+		if p := a.panes.Active(); p != nil {
+			p.Scrollback.ScrollDown(24)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// G: Scroll to bottom (normal mode) - return to live view
+	if err := g.SetKeybinding("", 'G', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if getMode().IsTerminal() {
+			if ctrl := getActiveCtrl(); ctrl != nil {
+				return ctrl.SendLiteralKeys("G")
+			}
+			return nil
+		}
+		if p := a.panes.Active(); p != nil {
+			p.Scrollback.ScrollToBottom()
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// === TERMINAL AND INPUT MODE KEYBINDINGS ===

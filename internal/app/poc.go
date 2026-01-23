@@ -184,9 +184,20 @@ func (a *PocApp) layout(g *gocui.Gui) error {
 		ui.ConfigurePaneView(v, p, isActive, currentMode)
 		v.Editor = gocui.EditorFunc(a.makeTerminalEditor(p.Ctrl))
 
-		// Render terminal buffer to view
+		// Render content: scrollback history or live terminal
 		v.Clear()
-		ui.RenderTerminal(v, p.Term)
+		if p.Scrollback.IsScrolled() {
+			height := layout.Height()
+			lines, err := p.Scrollback.CaptureHistory(height)
+			if err == nil {
+				ui.RenderScrollback(v, lines)
+			} else {
+				// Fall back to live terminal on error
+				ui.RenderTerminal(v, p.Term)
+			}
+		} else {
+			ui.RenderTerminal(v, p.Term)
+		}
 	}
 
 	// Handle input modal

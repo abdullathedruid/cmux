@@ -27,20 +27,38 @@ func RenderTerminal(v *gocui.View, term *pane.SafeTerminal) {
 	fmt.Fprint(v, sb.String())
 }
 
+// RenderScrollback renders scrollback history lines to a gocui view.
+func RenderScrollback(v *gocui.View, lines []string) {
+	for i, line := range lines {
+		if i > 0 {
+			fmt.Fprintln(v)
+		}
+		fmt.Fprint(v, line)
+	}
+}
+
 // ConfigurePaneView sets up a gocui view for a pane with proper styling.
 func ConfigurePaneView(v *gocui.View, p *pane.Pane, isActive bool, mode input.Mode) {
+	scrollPos := p.Scrollback.ScrollPos()
+	scrollIndicator := ""
+	if scrollPos > 0 {
+		scrollIndicator = fmt.Sprintf(" [+%d]", scrollPos)
+	}
+
 	if isActive {
-		v.Title = fmt.Sprintf(" [%s] %d: %s ", mode.String(), p.Index, p.Name)
+		v.Title = fmt.Sprintf(" [%s] %d: %s%s ", mode.String(), p.Index, p.Name, scrollIndicator)
 		// Bold frame for active pane using heavy box-drawing characters
 		v.FrameRunes = []rune{'━', '┃', '┏', '┓', '┗', '┛'}
-		// Color based on mode: blue for normal, green for terminal
-		if mode.IsTerminal() {
+		// Color based on mode: blue for normal, green for terminal, yellow for scrolled
+		if scrollPos > 0 {
+			v.FrameColor = gocui.ColorYellow
+		} else if mode.IsTerminal() {
 			v.FrameColor = gocui.ColorGreen
 		} else {
 			v.FrameColor = gocui.ColorBlue
 		}
 	} else {
-		v.Title = fmt.Sprintf(" %d: %s ", p.Index, p.Name)
+		v.Title = fmt.Sprintf(" %d: %s%s ", p.Index, p.Name, scrollIndicator)
 		// Regular frame for inactive panes
 		v.FrameRunes = []rune{'─', '│', '┌', '┐', '└', '┘'}
 		v.FrameColor = gocui.ColorDefault

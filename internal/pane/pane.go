@@ -8,11 +8,12 @@ import (
 
 // Pane represents a single pane with its tmux control mode connection and terminal emulator.
 type Pane struct {
-	Index    int
-	Name     string
-	Ctrl     *terminal.ControlMode
-	Term     *SafeTerminal
-	ViewName string
+	Index      int
+	Name       string
+	Ctrl       *terminal.ControlMode
+	Term       *SafeTerminal
+	Scrollback *Scrollback
+	ViewName   string
 }
 
 // New creates a new Pane with the given session name and dimensions.
@@ -27,11 +28,12 @@ func New(index int, sessionName string, width, height int) *Pane {
 	}
 
 	return &Pane{
-		Index:    index,
-		Name:     sessionName,
-		Ctrl:     terminal.NewControlMode(sessionName),
-		Term:     NewSafeTerminal(height, width),
-		ViewName: fmt.Sprintf("pane-%d", index-1), // 0-indexed view name
+		Index:      index,
+		Name:       sessionName,
+		Ctrl:       terminal.NewControlMode(sessionName),
+		Term:       NewSafeTerminal(height, width),
+		Scrollback: NewScrollback(sessionName),
+		ViewName:   fmt.Sprintf("pane-%d", index-1), // 0-indexed view name
 	}
 }
 
