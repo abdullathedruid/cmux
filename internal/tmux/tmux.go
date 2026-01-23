@@ -47,6 +47,8 @@ type Client interface {
 	DisplayDiffPopup(workdir string) error
 	// GetCurrentSession returns the name of the current tmux session, or empty if not in tmux.
 	GetCurrentSession() string
+	// GetPanePID returns the PID of the shell process running in the pane.
+	GetPanePID(name string) (int, error)
 }
 
 // RealClient implements Client using actual tmux commands.
@@ -312,4 +314,22 @@ func (c *RealClient) DisplayDiffPopup(workdir string) error {
 		return fmt.Errorf("tmux display-popup (diff): %w: %s", err, stderr.String())
 	}
 	return nil
+}
+
+// GetPanePID returns the PID of the shell process running in the pane.
+func (c *RealClient) GetPanePID(name string) (int, error) {
+	cmd := exec.Command("tmux", "display-message", "-t", name, "-p", "#{pane_pid}")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return 0, fmt.Errorf("tmux display-message: %w: %s", err, stderr.String())
+	}
+
+	var pid int
+	if _, err := fmt.Sscanf(strings.TrimSpace(stdout.String()), "%d", &pid); err != nil {
+		return 0, fmt.Errorf("parse pane pid: %w", err)
+	}
+	return pid, nil
 }

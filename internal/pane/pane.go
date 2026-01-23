@@ -3,7 +3,9 @@ package pane
 import (
 	"fmt"
 
+	"github.com/abdullathedruid/cmux/internal/process"
 	"github.com/abdullathedruid/cmux/internal/terminal"
+	"github.com/abdullathedruid/cmux/internal/tmux"
 )
 
 // Pane represents a single pane with its tmux control mode connection and terminal emulator.
@@ -61,4 +63,14 @@ func (p *Pane) OutputChan() <-chan []byte {
 // WriteToTerminal writes data to the terminal buffer.
 func (p *Pane) WriteToTerminal(data []byte) {
 	p.Term.Write(data)
+}
+
+// GetActiveApp returns the name and full command line of the active application
+// running in this pane. The tmux client is used to get the pane's shell PID.
+func (p *Pane) GetActiveApp(client tmux.Client) (name string, cmdLine string, err error) {
+	pid, err := client.GetPanePID(p.Name)
+	if err != nil {
+		return "", "", fmt.Errorf("get pane pid: %w", err)
+	}
+	return process.GetActiveApp(pid)
 }

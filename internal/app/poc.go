@@ -14,6 +14,7 @@ import (
 	"github.com/abdullathedruid/cmux/internal/input"
 	"github.com/abdullathedruid/cmux/internal/pane"
 	"github.com/abdullathedruid/cmux/internal/terminal"
+	"github.com/abdullathedruid/cmux/internal/tmux"
 	"github.com/abdullathedruid/cmux/internal/ui"
 	"github.com/jesseduffield/gocui"
 )
@@ -24,6 +25,7 @@ type PocApp struct {
 	panes    *pane.Manager
 	input    *input.Handler
 	config   *config.Config
+	tmux     tmux.Client
 	repoRoot string
 
 	// Layout state for resize detection
@@ -67,6 +69,7 @@ func NewPocAppWithConfig(cfg *config.Config) (*PocApp, error) {
 		panes:     pane.NewManager(),
 		input:     input.NewHandler(),
 		config:    cfg,
+		tmux:      tmux.NewClient(cfg.ClaudeCommand),
 		repoRoot:  repoRoot,
 		firstCall: true,
 	}, nil
@@ -231,11 +234,17 @@ func (a *PocApp) layout(g *gocui.Gui) error {
 
 			// Set cursor after view is focused
 			if currentMode.IsTerminal() {
-				x, y := activePane.Term.Cursor()
-				if v, err := g.View(activePane.ViewName); err == nil {
-					v.SetCursor(x, y)
+				// Hide cursor for apps that manage their own cursor (e.g., Claude)
+				appName, _, _ := activePane.GetActiveApp(a.tmux)
+				if appName == "claude" {
+					g.Cursor = false
+				} else {
+					x, y := activePane.Term.Cursor()
+					if v, err := g.View(activePane.ViewName); err == nil {
+						v.SetCursor(x, y)
+					}
+					g.Cursor = true
 				}
-				g.Cursor = true
 			} else {
 				g.Cursor = false
 			}
