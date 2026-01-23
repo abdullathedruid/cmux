@@ -7,9 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strings"
 	"syscall"
 
+	"github.com/abdullathedruid/cmux/internal/config"
+	"github.com/abdullathedruid/cmux/internal/git"
 	"github.com/abdullathedruid/cmux/internal/input"
 	"github.com/abdullathedruid/cmux/internal/pane"
 	"github.com/abdullathedruid/cmux/internal/terminal"
@@ -22,6 +23,7 @@ type PocApp struct {
 	gui      *gocui.Gui
 	panes    *pane.Manager
 	input    *input.Handler
+	config   *config.Config
 	repoRoot string
 
 	// Layout state for resize detection
@@ -33,6 +35,19 @@ type PocApp struct {
 
 // NewPocApp creates a new application instance.
 func NewPocApp() (*PocApp, error) {
+	return NewPocAppWithConfig(nil)
+}
+
+// NewPocAppWithConfig creates a new application instance with the given config.
+func NewPocAppWithConfig(cfg *config.Config) (*PocApp, error) {
+	if cfg == nil {
+		var err error
+		cfg, err = config.Load()
+		if err != nil {
+			return nil, fmt.Errorf("loading config: %w", err)
+		}
+	}
+
 	g, err := gocui.NewGui(gocui.NewGuiOpts{
 		OutputMode: gocui.OutputTrue,
 	})
@@ -40,8 +55,10 @@ func NewPocApp() (*PocApp, error) {
 		return nil, fmt.Errorf("initializing GUI: %w", err)
 	}
 
-	repoRoot, err := getGitRepoRoot()
+	// Find repository root from current directory
+	repoRoot, err := git.FindRepoRoot(".")
 	if err != nil {
+		// Fall back to current directory if not in a git repo
 		repoRoot = "."
 	}
 
@@ -49,6 +66,7 @@ func NewPocApp() (*PocApp, error) {
 		gui:       g,
 		panes:     pane.NewManager(),
 		input:     input.NewHandler(),
+		config:    cfg,
 		repoRoot:  repoRoot,
 		firstCall: true,
 	}, nil
@@ -250,16 +268,14 @@ func (a *PocApp) addNewPane(sessionName string) error {
 
 // createWorktreeAndSession creates a git worktree and a tmux session in it.
 func (a *PocApp) createWorktreeAndSession(name string) error {
-	worktreePath := fmt.Sprintf("%s/.worktrees/%s", a.repoRoot, name)
-
-	// Create the worktree with a new branch
-	cmd := exec.Command("git", "-C", a.repoRoot, "worktree", "add", "-b", name, worktreePath)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git worktree add: %w: %s", err, out)
+	// Use the git package to create the worktree with a new branch
+	worktreePath, err := git.CreateWorktree(a.repoRoot, name, true)
+	if err != nil {
+		return fmt.Errorf("creating worktree: %w", err)
 	}
 
 	// Create a new tmux session in the worktree directory
-	cmd = exec.Command("tmux", "new-session", "-d", "-s", name, "-c", worktreePath)
+	cmd := exec.Command("tmux", "new-session", "-d", "-s", name, "-c", worktreePath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tmux new-session: %w: %s", err, out)
 	}
@@ -300,12 +316,3 @@ func (a *PocApp) makeInputEditor() func(v *gocui.View, key gocui.Key, ch rune, m
 	}
 }
 
-// getGitRepoRoot returns the root directory of the current git repository.
-func getGitRepoRoot() (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
