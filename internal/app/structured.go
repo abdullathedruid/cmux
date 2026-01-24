@@ -14,10 +14,12 @@ import (
 
 	"github.com/abdullathedruid/cmux/internal/claude"
 	"github.com/abdullathedruid/cmux/internal/config"
+	"github.com/abdullathedruid/cmux/internal/controller"
 	"github.com/abdullathedruid/cmux/internal/discovery"
 	"github.com/abdullathedruid/cmux/internal/input"
 	"github.com/abdullathedruid/cmux/internal/pane"
 	"github.com/abdullathedruid/cmux/internal/session"
+	"github.com/abdullathedruid/cmux/internal/state"
 	"github.com/abdullathedruid/cmux/internal/terminal"
 	"github.com/abdullathedruid/cmux/internal/tmux"
 	"github.com/abdullathedruid/cmux/internal/ui"
@@ -62,6 +64,10 @@ type StructuredApp struct {
 	// Advanced session management
 	discoveryService *discovery.Service
 	sessionManager   *session.Manager
+
+	// Repo manager view
+	repoManagerEnabled bool
+	repoManagerCtrl    *controller.RepoManagerController
 }
 
 // NewStructuredApp creates a new structured view application.
@@ -95,8 +101,10 @@ func NewStructuredAppWithConfig(cfg *config.Config) (*StructuredApp, error) {
 	}
 
 	tmuxClient := tmux.NewClient(cfg.ClaudeCommand)
+	discoverySvc := discovery.NewService(tmuxClient, cfg)
+	sessionMgr := session.NewManager(tmuxClient, cfg)
 
-	return &StructuredApp{
+	app := &StructuredApp{
 		gui:              g,
 		config:           cfg,
 		input:            input.NewHandler(),
@@ -104,9 +112,34 @@ func NewStructuredAppWithConfig(cfg *config.Config) (*StructuredApp, error) {
 		sessions:         make([]string, 0),
 		eventWatcher:     watcher,
 		tmuxClient:       tmuxClient,
-		discoveryService: discovery.NewService(tmuxClient, cfg),
-		sessionManager:   session.NewManager(tmuxClient, cfg),
-	}, nil
+		discoveryService: discoverySvc,
+		sessionManager:   sessionMgr,
+	}
+
+	// Create controller context
+	ctx := &controller.Context{
+		Config:     cfg,
+		State:      &state.State{},
+		TmuxClient: tmuxClient,
+		OnAttach: func(sessionName string) error {
+			app.loadSession(sessionName)
+			app.hideRepoManager()
+			return nil
+		},
+		OnRefresh: func() error {
+			app.refreshAvailableSessions()
+			return nil
+		},
+		OnQuit: func() error {
+			app.hideRepoManager()
+			return nil
+		},
+	}
+
+	// Create repo manager controller
+	app.repoManagerCtrl = controller.NewRepoManagerController(ctx, discoverySvc, sessionMgr)
+
+	return app, nil
 }
 
 // InitSessions initializes views for the given tmux session names.
@@ -240,6 +273,33 @@ func (a *StructuredApp) loadSession(name string) {
 	a.activeIdx = 0
 }
 
+// showRepoManager displays the repo manager view.
+func (a *StructuredApp) showRepoManager() {
+	if a.repoManagerCtrl == nil {
+		return
+	}
+	a.repoManagerEnabled = true
+	a.repoManagerCtrl.Show(a.gui)
+}
+
+// hideRepoManager hides the repo manager view and returns to sidebar.
+func (a *StructuredApp) hideRepoManager() {
+	if a.repoManagerCtrl == nil {
+		return
+	}
+	a.repoManagerEnabled = false
+	a.repoManagerCtrl.Hide(a.gui)
+}
+
+// toggleRepoManager toggles between repo manager and sidebar views.
+func (a *StructuredApp) toggleRepoManager() {
+	if a.repoManagerEnabled {
+		a.hideRepoManager()
+	} else {
+		a.showRepoManager()
+	}
+}
+
 // Run starts the main event loop.
 func (a *StructuredApp) Run() error {
 	defer a.Close()
@@ -305,6 +365,11 @@ func (a *StructuredApp) layout(g *gocui.Gui) error {
 
 	// Reserve 1 visible row for status bar
 	paneMaxY := maxY - pane.StatusBarHeight
+
+	// Handle repo manager layout
+	if a.repoManagerEnabled && a.repoManagerCtrl != nil {
+		return a.repoManagerCtrl.Layout(g)
+	}
 
 	// Handle sidebar layout
 	if a.sidebarEnabled {
@@ -933,6 +998,18 @@ func (a *StructuredApp) setupKeybindings() error {
 			a.deleteSelectedSession()
 		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
 			a.terminalCtrl.SendLiteralKeys("x")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// 'R' - Toggle repo manager view
+	if err := a.gui.SetKeybinding("", 'R', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() && a.sidebarEnabled {
+			a.toggleRepoManager()
+		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendLiteralKeys("R")
 		}
 		return nil
 	}); err != nil {
