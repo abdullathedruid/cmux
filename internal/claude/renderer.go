@@ -185,7 +185,9 @@ func (r *Renderer) renderMessageGrouped(msg Message, showHeader bool, isStreamin
 			// Dim streaming messages (session is still active)
 			if isStreaming {
 				for i, line := range textLines {
-					textLines[i] = "\033[2m" + line + "\033[0m"
+					// Replace resets with reset+dim to maintain dim through inline formatting
+					dimmed := strings.ReplaceAll(line, "\033[0m", "\033[0;2m")
+					textLines[i] = "\033[2m" + dimmed + "\033[0m"
 				}
 			}
 			lines = append(lines, textLines...)
