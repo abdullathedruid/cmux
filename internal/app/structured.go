@@ -14,8 +14,8 @@ import (
 
 	"github.com/abdullathedruid/cmux/internal/claude"
 	"github.com/abdullathedruid/cmux/internal/config"
-	"github.com/abdullathedruid/cmux/internal/controller"
 	"github.com/abdullathedruid/cmux/internal/discovery"
+	"github.com/abdullathedruid/cmux/internal/git"
 	"github.com/abdullathedruid/cmux/internal/input"
 	"github.com/abdullathedruid/cmux/internal/pane"
 	"github.com/abdullathedruid/cmux/internal/session"
@@ -65,9 +65,12 @@ type StructuredApp struct {
 	discoveryService *discovery.Service
 	sessionManager   *session.Manager
 
-	// Repo manager view
-	repoManagerEnabled bool
-	repoManagerCtrl    *controller.RepoManagerController
+	// Unified sidebar state
+	focusedPane      string                     // "repos", "sessions", or "main"
+	repositories     []discovery.RepositoryInfo // All configured repositories
+	repoSelectedIdx  int                        // Currently selected repo index
+	sessionsForRepo  []*state.Session           // Sessions filtered for selected repo
+	sessionSelectedIdx int                      // Selected session index in the list
 }
 
 // NewStructuredApp creates a new structured view application.
@@ -114,30 +117,8 @@ func NewStructuredAppWithConfig(cfg *config.Config) (*StructuredApp, error) {
 		tmuxClient:       tmuxClient,
 		discoveryService: discoverySvc,
 		sessionManager:   sessionMgr,
+		focusedPane:      "sessions", // Default focus on sessions pane
 	}
-
-	// Create controller context
-	ctx := &controller.Context{
-		Config:     cfg,
-		State:      &state.State{},
-		TmuxClient: tmuxClient,
-		OnAttach: func(sessionName string) error {
-			app.loadSession(sessionName)
-			app.hideRepoManager()
-			return nil
-		},
-		OnRefresh: func() error {
-			app.refreshAvailableSessions()
-			return nil
-		},
-		OnQuit: func() error {
-			app.hideRepoManager()
-			return nil
-		},
-	}
-
-	// Create repo manager controller
-	app.repoManagerCtrl = controller.NewRepoManagerController(ctx, discoverySvc, sessionMgr)
 
 	return app, nil
 }
@@ -180,14 +161,21 @@ func (a *StructuredApp) InitSessions(sessions []string) error {
 // InitWithDiscovery initializes the app in discovery mode with sidebar.
 func (a *StructuredApp) InitWithDiscovery() error {
 	a.sidebarEnabled = true
+	a.focusedPane = "sessions"
 
-	// Discover existing Claude sessions
+	// Load repositories and sessions
+	a.refreshRepositories()
+
+	// Also refresh available sessions for backward compatibility
 	if err := a.refreshAvailableSessions(); err != nil {
 		return err
 	}
 
-	// Load first session if any exist
-	if len(a.availableSessions) > 0 {
+	// Load first session from selected repo if any exist
+	if len(a.sessionsForRepo) > 0 {
+		a.loadSession(a.sessionsForRepo[0].Name)
+	} else if len(a.availableSessions) > 0 {
+		// Fallback to old behavior if no repo sessions
 		a.loadSession(a.availableSessions[0])
 	}
 
@@ -273,30 +261,58 @@ func (a *StructuredApp) loadSession(name string) {
 	a.activeIdx = 0
 }
 
-// showRepoManager displays the repo manager view.
-func (a *StructuredApp) showRepoManager() {
-	if a.repoManagerCtrl == nil {
-		return
+// refreshRepositories reloads the configured repositories.
+func (a *StructuredApp) refreshRepositories() {
+	a.repositories = a.discoveryService.GetConfiguredRepositories()
+
+	// Adjust selection if needed
+	if a.repoSelectedIdx >= len(a.repositories) {
+		if len(a.repositories) > 0 {
+			a.repoSelectedIdx = len(a.repositories) - 1
+		} else {
+			a.repoSelectedIdx = 0
+		}
 	}
-	a.repoManagerEnabled = true
-	a.repoManagerCtrl.Show(a.gui)
+
+	// Refresh sessions for the selected repo
+	a.refreshSessionsForSelectedRepo()
 }
 
-// hideRepoManager hides the repo manager view and returns to sidebar.
-func (a *StructuredApp) hideRepoManager() {
-	if a.repoManagerCtrl == nil {
+// refreshSessionsForSelectedRepo loads sessions for the currently selected repository.
+func (a *StructuredApp) refreshSessionsForSelectedRepo() {
+	if len(a.repositories) == 0 || a.repoSelectedIdx >= len(a.repositories) {
+		a.sessionsForRepo = nil
 		return
 	}
-	a.repoManagerEnabled = false
-	a.repoManagerCtrl.Hide(a.gui)
-}
 
-// toggleRepoManager toggles between repo manager and sidebar views.
-func (a *StructuredApp) toggleRepoManager() {
-	if a.repoManagerEnabled {
-		a.hideRepoManager()
-	} else {
-		a.showRepoManager()
+	allSessions, err := a.discoveryService.DiscoverSessions()
+	if err != nil {
+		a.sessionsForRepo = nil
+		return
+	}
+
+	repoPath := a.repositories[a.repoSelectedIdx].Path
+
+	var filtered []*state.Session
+	for _, sess := range allSessions {
+		if sess.RepoPath == repoPath {
+			filtered = append(filtered, sess)
+		}
+	}
+	a.sessionsForRepo = filtered
+
+	// Adjust session selection
+	if a.sessionSelectedIdx >= len(a.sessionsForRepo) {
+		if len(a.sessionsForRepo) > 0 {
+			a.sessionSelectedIdx = len(a.sessionsForRepo) - 1
+		} else {
+			a.sessionSelectedIdx = 0
+		}
+	}
+
+	// Load the selected session into the main view
+	if len(a.sessionsForRepo) > 0 && a.sessionSelectedIdx < len(a.sessionsForRepo) {
+		a.loadSession(a.sessionsForRepo[a.sessionSelectedIdx].Name)
 	}
 }
 
@@ -366,12 +382,7 @@ func (a *StructuredApp) layout(g *gocui.Gui) error {
 	// Reserve 1 visible row for status bar
 	paneMaxY := maxY - pane.StatusBarHeight
 
-	// Handle repo manager layout
-	if a.repoManagerEnabled && a.repoManagerCtrl != nil {
-		return a.repoManagerCtrl.Layout(g)
-	}
-
-	// Handle sidebar layout
+	// Handle sidebar layout (unified repos + sessions + main view)
 	if a.sidebarEnabled {
 		return a.layoutWithSidebar(g, maxX, paneMaxY, currentMode)
 	}
@@ -520,22 +531,35 @@ func (a *StructuredApp) layout(g *gocui.Gui) error {
 	return nil
 }
 
-// layoutWithSidebar renders the sidebar and main area.
+// layoutWithSidebar renders the unified layout with repos panel, sessions panel, and main view.
 func (a *StructuredApp) layoutWithSidebar(g *gocui.Gui, maxX, paneMaxY int, currentMode input.Mode) error {
 	// No status bar in sidebar mode - use full height
 	maxY := paneMaxY + pane.StatusBarHeight
 	fullHeight := maxY
-	sidebarLayout := pane.CalculateSidebarLayout(maxX, fullHeight)
+	layout := pane.CalculateUnifiedSidebarLayout(maxX, fullHeight)
 
-	// Render sidebar
-	sidebarView, err := g.SetView("sidebar", sidebarLayout.Sidebar.X0, sidebarLayout.Sidebar.Y0,
-		sidebarLayout.Sidebar.X1, sidebarLayout.Sidebar.Y1, 0)
+	// Delete old sidebar view if it exists (we now have repos and sessions views)
+	g.DeleteView("sidebar")
+
+	// Render repos panel (top-left)
+	reposView, err := g.SetView("repos-panel", layout.Repos.X0, layout.Repos.Y0,
+		layout.Repos.X1, layout.Repos.Y1, 0)
 	if err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
 			return err
 		}
 	}
-	a.renderSidebar(sidebarView)
+	a.renderReposPanel(reposView)
+
+	// Render sessions panel (bottom-left)
+	sessionsView, err := g.SetView("sessions-panel", layout.Sessions.X0, layout.Sessions.Y0,
+		layout.Sessions.X1, layout.Sessions.Y1, 0)
+	if err != nil {
+		if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
+			return err
+		}
+	}
+	a.renderSessionsPanel(sessionsView)
 
 	// Render main session view if we have a session loaded
 	if len(a.sessions) > 0 && a.activeIdx < len(a.sessions) {
@@ -543,12 +567,12 @@ func (a *StructuredApp) layoutWithSidebar(g *gocui.Gui, maxX, paneMaxY int, curr
 		view := a.views[session]
 
 		// Handle resize
-		width := sidebarLayout.Main.Width()
-		height := sidebarLayout.Main.Height()
+		width := layout.Main.Width()
+		height := layout.Main.Height()
 		view.Resize(width, height)
 
-		mainView, err := g.SetView("main-view", sidebarLayout.Main.X0, sidebarLayout.Main.Y0,
-			sidebarLayout.Main.X1, sidebarLayout.Main.Y1, 0)
+		mainView, err := g.SetView("main-view", layout.Main.X0, layout.Main.Y0,
+			layout.Main.X1, layout.Main.Y1, 0)
 		if err != nil {
 			if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
 				return err
@@ -560,8 +584,8 @@ func (a *StructuredApp) layoutWithSidebar(g *gocui.Gui, maxX, paneMaxY int, curr
 		fmt.Fprint(mainView, view.Render())
 	} else {
 		// No session loaded, show empty main view
-		mainView, err := g.SetView("main-view", sidebarLayout.Main.X0, sidebarLayout.Main.Y0,
-			sidebarLayout.Main.X1, sidebarLayout.Main.Y1, 0)
+		mainView, err := g.SetView("main-view", layout.Main.X0, layout.Main.Y0,
+			layout.Main.X1, layout.Main.Y1, 0)
 		if err != nil {
 			if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
 				return err
@@ -571,7 +595,7 @@ func (a *StructuredApp) layoutWithSidebar(g *gocui.Gui, maxX, paneMaxY int, curr
 		mainView.FrameColor = gocui.ColorDefault
 		mainView.TitleColor = gocui.ColorDefault
 		mainView.Clear()
-		fmt.Fprint(mainView, "\n  Press 'n' to create a new session\n  or select an existing session from the sidebar")
+		fmt.Fprint(mainView, "\n  Select a repository and\n  session from the sidebar\n\n  Press 'n' to create\n  a new session")
 	}
 
 	// Delete status bar if it exists (not needed in sidebar mode)
@@ -638,8 +662,12 @@ func (a *StructuredApp) layoutWithSidebar(g *gocui.Gui, maxX, paneMaxY int, curr
 				}
 			}
 
-			// Custom input modal for session creation
-			v.Title = " New Session (Enter=confirm, Esc=cancel) "
+			// Custom input modal for session/repo creation
+			title := " New Session (Enter=confirm, Esc=cancel) "
+			if a.inputPurpose == "add_repo" {
+				title = " Add Repository Path (Enter=confirm, Esc=cancel) "
+			}
+			v.Title = title
 			v.Frame = true
 			v.FrameRunes = []rune{'━', '┃', '┏', '┓', '┗', '┛'}
 			v.FrameColor = gocui.ColorYellow
@@ -655,7 +683,15 @@ func (a *StructuredApp) layoutWithSidebar(g *gocui.Gui, maxX, paneMaxY int, curr
 			v.SetCursor(len(inputBuffer)+1, 0)
 		} else {
 			g.DeleteView("input-modal")
-			g.SetCurrentView("sidebar")
+			// Set focus based on which pane is focused
+			switch a.focusedPane {
+			case "repos":
+				g.SetCurrentView("repos-panel")
+			case "sessions":
+				g.SetCurrentView("sessions-panel")
+			default:
+				g.SetCurrentView("sessions-panel")
+			}
 			g.Cursor = false
 		}
 	}
@@ -663,27 +699,34 @@ func (a *StructuredApp) layoutWithSidebar(g *gocui.Gui, maxX, paneMaxY int, curr
 	return nil
 }
 
-// renderSidebar draws the session list in the sidebar.
-func (a *StructuredApp) renderSidebar(v *gocui.View) {
-	v.Title = " Sessions "
+// renderReposPanel draws the repository list in the repos panel.
+func (a *StructuredApp) renderReposPanel(v *gocui.View) {
+	v.Title = " [r] Repositories "
 	v.Frame = true
-	v.FrameColor = gocui.ColorDefault
-	v.TitleColor = gocui.ColorDefault
+
+	// Highlight if focused
+	if a.focusedPane == "repos" {
+		v.FrameColor = gocui.ColorCyan
+		v.TitleColor = gocui.ColorCyan
+	} else {
+		v.FrameColor = gocui.ColorDefault
+		v.TitleColor = gocui.ColorDefault
+	}
 	v.Clear()
 
-	if len(a.availableSessions) == 0 {
-		fmt.Fprint(v, "\n  No Claude sessions\n  found.\n\n  Press 'n' to\n  create one.")
+	if len(a.repositories) == 0 {
+		fmt.Fprint(v, "\n  No repositories\n  configured.\n\n  Press 'a' to add.")
 		return
 	}
 
-	for i, session := range a.availableSessions {
+	for i, repo := range a.repositories {
 		prefix := "  "
-		if i == a.sidebarSelectedIdx {
+		if i == a.repoSelectedIdx {
 			prefix = "> "
 		}
 
-		// Truncate session name if too long
-		displayName := session
+		// Truncate name if too long
+		displayName := repo.Name
 		maxLen := pane.SidebarWidth - 4
 		if len(displayName) > maxLen {
 			displayName = displayName[:maxLen-2] + ".."
@@ -691,21 +734,75 @@ func (a *StructuredApp) renderSidebar(v *gocui.View) {
 
 		fmt.Fprintf(v, "%s%s\n", prefix, displayName)
 	}
+}
+
+// renderSessionsPanel draws the session list for the selected repo.
+func (a *StructuredApp) renderSessionsPanel(v *gocui.View) {
+	repoName := ""
+	if a.repoSelectedIdx < len(a.repositories) {
+		repoName = a.repositories[a.repoSelectedIdx].Name
+	}
+	v.Title = fmt.Sprintf(" [s] Sessions - %s ", repoName)
+	v.Frame = true
+
+	// Highlight if focused
+	if a.focusedPane == "sessions" {
+		v.FrameColor = gocui.ColorCyan
+		v.TitleColor = gocui.ColorCyan
+	} else {
+		v.FrameColor = gocui.ColorDefault
+		v.TitleColor = gocui.ColorDefault
+	}
+	v.Clear()
+
+	if len(a.repositories) == 0 {
+		fmt.Fprint(v, "\n  Add a repository\n  first using 'a'\n  in the repos panel.")
+		return
+	}
+
+	if len(a.sessionsForRepo) == 0 {
+		fmt.Fprint(v, "\n  No sessions for\n  this repository.\n\n  Press 'n' to create.")
+		return
+	}
+
+	for i, sess := range a.sessionsForRepo {
+		prefix := "  "
+		if i == a.sessionSelectedIdx {
+			prefix = "> "
+		}
+
+		// Format: branch (status)
+		branchDisplay := sess.Branch
+		if sess.Worktree != "" {
+			branchDisplay += " [wt]"
+		}
+
+		statusIcon := ""
+		switch sess.Status {
+		case state.StatusActive:
+			statusIcon = " [active]"
+		case state.StatusTool:
+			statusIcon = " [tool]"
+		case state.StatusThinking:
+			statusIcon = " [thinking]"
+		case state.StatusNeedsInput:
+			statusIcon = " [input]"
+		}
+
+		if sess.Attached {
+			statusIcon = " [attached]"
+		}
+
+		fmt.Fprintf(v, "%s%s%s\n", prefix, branchDisplay, statusIcon)
+	}
 
 	// Add footer with hints
 	height := v.InnerHeight()
-	sessionCount := len(a.availableSessions)
-	if height > sessionCount+5 {
-		fmt.Fprint(v, "\n───────────────────────\n")
-		fmt.Fprint(v, " [j/k] Navigate\n")
-		fmt.Fprint(v, " [i/Enter] Terminal\n")
-		fmt.Fprint(v, " [n] New  [x] Delete\n")
-		fmt.Fprint(v, " [r] Refresh [R] Repos\n")
-		fmt.Fprint(v, " [Ctrl+U/D] Scroll")
-	} else if height > sessionCount+3 {
+	sessionCount := len(a.sessionsForRepo)
+	if height > sessionCount+3 {
 		fmt.Fprint(v, "\n───────────────────────\n")
 		fmt.Fprint(v, " j/k:nav i:term n:new\n")
-		fmt.Fprint(v, " x:del r:ref R:repos")
+		fmt.Fprint(v, " x:del Ctrl+U/D:scroll")
 	}
 }
 
@@ -791,12 +888,22 @@ func (a *StructuredApp) setupKeybindings() error {
 		if err := a.gui.SetKeybinding("", k, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 			if a.input.Mode().IsNormal() {
 				if a.sidebarEnabled {
-					// Sidebar navigation
+					// Unified sidebar navigation based on focused pane
 					switch k {
 					case 'k':
-						a.sidebarPrev()
+						a.navigateUp()
 					case 'j':
-						a.sidebarNext()
+						a.navigateDown()
+					case 'h':
+						// Move focus left (sessions -> repos)
+						if a.focusedPane == "sessions" {
+							a.focusedPane = "repos"
+						}
+					case 'l':
+						// Move focus right (repos -> sessions)
+						if a.focusedPane == "repos" {
+							a.focusedPane = "sessions"
+						}
 					}
 				} else {
 					// Pane navigation (non-sidebar mode)
@@ -869,22 +976,25 @@ func (a *StructuredApp) setupKeybindings() error {
 		return err
 	}
 
-	// Enter terminal mode with Enter (or load session in sidebar mode)
+	// Enter terminal mode with Enter (or select in sidebar mode)
 	if err := a.gui.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		if a.input.Mode().IsInput() {
 			// Handle input submission
 			inputText := a.input.ConsumeInputBuffer()
-			if a.inputPurpose == "new_session" {
-				a.createNewSession(inputText)
+			switch a.inputPurpose {
+			case "new_session":
+				a.createNewSessionForRepo(inputText)
+			case "add_repo":
+				a.addRepository(inputText)
 			}
 			a.inputPurpose = ""
 			return nil
 		}
 		if a.input.Mode().IsNormal() {
-			if a.sidebarEnabled && len(a.availableSessions) > 0 {
-				// Load selected session from sidebar
-				if a.sidebarSelectedIdx < len(a.availableSessions) {
-					a.loadSession(a.availableSessions[a.sidebarSelectedIdx])
+			if a.sidebarEnabled {
+				// Enter terminal mode for current session
+				if len(a.sessionsForRepo) > 0 || len(a.sessions) > 0 {
+					return a.enterTerminalModal()
 				}
 				return nil
 			}
@@ -973,24 +1083,12 @@ func (a *StructuredApp) setupKeybindings() error {
 		return err
 	}
 
-	// Sidebar keybindings
-	// 'n' - Create new session
-	if err := a.gui.SetKeybinding("", 'n', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		if a.input.Mode().IsNormal() && a.sidebarEnabled {
-			a.inputPurpose = "new_session"
-			a.input.EnterInputMode()
-		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
-			a.terminalCtrl.SendLiteralKeys("n")
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
+	// Unified sidebar keybindings
 
-	// 'r' - Refresh session list
+	// 'r' - Focus repos pane
 	if err := a.gui.SetKeybinding("", 'r', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		if a.input.Mode().IsNormal() && a.sidebarEnabled {
-			a.refreshAvailableSessions()
+			a.focusedPane = "repos"
 		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
 			a.terminalCtrl.SendLiteralKeys("r")
 		}
@@ -999,10 +1097,73 @@ func (a *StructuredApp) setupKeybindings() error {
 		return err
 	}
 
-	// 'x' - Delete/close selected session
+	// 's' - Focus sessions pane
+	if err := a.gui.SetKeybinding("", 's', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() && a.sidebarEnabled {
+			a.focusedPane = "sessions"
+		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendLiteralKeys("s")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// 'n' - Create new session (when in sessions pane)
+	if err := a.gui.SetKeybinding("", 'n', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() && a.sidebarEnabled {
+			if a.focusedPane == "sessions" && len(a.repositories) > 0 {
+				a.inputPurpose = "new_session"
+				a.input.EnterInputMode()
+			}
+		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendLiteralKeys("n")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// 'a' - Add repo (when in repos pane)
+	if err := a.gui.SetKeybinding("", 'a', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() && a.sidebarEnabled {
+			if a.focusedPane == "repos" {
+				a.inputPurpose = "add_repo"
+				a.input.EnterInputMode()
+			}
+		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendLiteralKeys("a")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// 'd' or 'x' - Delete selected item based on focused pane
+	deleteHandler := func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() && a.sidebarEnabled {
+			switch a.focusedPane {
+			case "repos":
+				a.deleteSelectedRepo()
+			case "sessions":
+				a.deleteSelectedSessionFromRepo()
+			}
+		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendLiteralKeys("d")
+		}
+		return nil
+	}
+	if err := a.gui.SetKeybinding("", 'd', gocui.ModNone, deleteHandler); err != nil {
+		return err
+	}
 	if err := a.gui.SetKeybinding("", 'x', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		if a.input.Mode().IsNormal() && a.sidebarEnabled {
-			a.deleteSelectedSession()
+			switch a.focusedPane {
+			case "repos":
+				a.deleteSelectedRepo()
+			case "sessions":
+				a.deleteSelectedSessionFromRepo()
+			}
 		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
 			a.terminalCtrl.SendLiteralKeys("x")
 		}
@@ -1011,10 +1172,11 @@ func (a *StructuredApp) setupKeybindings() error {
 		return err
 	}
 
-	// 'R' - Toggle repo manager view
+	// 'R' - Refresh repos and sessions
 	if err := a.gui.SetKeybinding("", 'R', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		if a.input.Mode().IsNormal() && a.sidebarEnabled {
-			a.toggleRepoManager()
+			a.refreshRepositories()
+			a.refreshAvailableSessions()
 		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
 			a.terminalCtrl.SendLiteralKeys("R")
 		}
@@ -1107,48 +1269,147 @@ func (a *StructuredApp) prevSession() {
 	a.activeIdx = (a.activeIdx - 1 + len(a.sessions)) % len(a.sessions)
 }
 
-// sidebarNext moves to the next item in the sidebar and loads it.
-func (a *StructuredApp) sidebarNext() {
-	if len(a.availableSessions) == 0 {
-		return
+// navigateUp moves up in the focused pane (repos or sessions).
+func (a *StructuredApp) navigateUp() {
+	switch a.focusedPane {
+	case "repos":
+		if len(a.repositories) == 0 {
+			return
+		}
+		a.repoSelectedIdx = (a.repoSelectedIdx - 1 + len(a.repositories)) % len(a.repositories)
+		a.refreshSessionsForSelectedRepo()
+	case "sessions":
+		if len(a.sessionsForRepo) == 0 {
+			return
+		}
+		a.sessionSelectedIdx = (a.sessionSelectedIdx - 1 + len(a.sessionsForRepo)) % len(a.sessionsForRepo)
+		if a.sessionSelectedIdx < len(a.sessionsForRepo) {
+			a.loadSession(a.sessionsForRepo[a.sessionSelectedIdx].Name)
+		}
 	}
-	a.sidebarSelectedIdx = (a.sidebarSelectedIdx + 1) % len(a.availableSessions)
-	a.loadSession(a.availableSessions[a.sidebarSelectedIdx])
 }
 
-// sidebarPrev moves to the previous item in the sidebar and loads it.
-func (a *StructuredApp) sidebarPrev() {
-	if len(a.availableSessions) == 0 {
-		return
+// navigateDown moves down in the focused pane (repos or sessions).
+func (a *StructuredApp) navigateDown() {
+	switch a.focusedPane {
+	case "repos":
+		if len(a.repositories) == 0 {
+			return
+		}
+		a.repoSelectedIdx = (a.repoSelectedIdx + 1) % len(a.repositories)
+		a.refreshSessionsForSelectedRepo()
+	case "sessions":
+		if len(a.sessionsForRepo) == 0 {
+			return
+		}
+		a.sessionSelectedIdx = (a.sessionSelectedIdx + 1) % len(a.sessionsForRepo)
+		if a.sessionSelectedIdx < len(a.sessionsForRepo) {
+			a.loadSession(a.sessionsForRepo[a.sessionSelectedIdx].Name)
+		}
 	}
-	a.sidebarSelectedIdx = (a.sidebarSelectedIdx - 1 + len(a.availableSessions)) % len(a.availableSessions)
-	a.loadSession(a.availableSessions[a.sidebarSelectedIdx])
 }
 
-// deleteSelectedSession kills the selected session in the sidebar.
-func (a *StructuredApp) deleteSelectedSession() {
-	if len(a.availableSessions) == 0 {
-		return
-	}
-	if a.sidebarSelectedIdx >= len(a.availableSessions) {
+// createNewSessionForRepo creates a new session for the currently selected repository.
+func (a *StructuredApp) createNewSessionForRepo(branchName string) {
+	if branchName == "" || len(a.repositories) == 0 || a.repoSelectedIdx >= len(a.repositories) {
 		return
 	}
 
-	sessionName := a.availableSessions[a.sidebarSelectedIdx]
+	repo := a.repositories[a.repoSelectedIdx]
 
-	// Kill the tmux session
-	if err := a.tmuxClient.KillSession(sessionName); err != nil {
+	// Check if branch exists
+	branches, _ := git.ListBranches(repo.Path)
+	branchExists := false
+	for _, b := range branches {
+		if b == branchName {
+			branchExists = true
+			break
+		}
+	}
+
+	sessionName, err := a.sessionManager.CreateSession(repo.Path, branchName, !branchExists)
+	if err != nil {
 		return // Silently fail
 	}
 
+	// Refresh and load
+	a.refreshSessionsForSelectedRepo()
+	a.refreshAvailableSessions()
+
+	// Find and select the new session
+	for i, sess := range a.sessionsForRepo {
+		if sess.Name == sessionName {
+			a.sessionSelectedIdx = i
+			a.loadSession(sessionName)
+			break
+		}
+	}
+}
+
+// addRepository adds a new repository to the config.
+func (a *StructuredApp) addRepository(path string) {
+	if path == "" {
+		return
+	}
+
+	// Validate it's a git repo
+	if _, err := git.FindRepoRoot(path); err != nil {
+		return // Silently fail - not a git repo
+	}
+
+	if err := a.config.AddRepository(path); err != nil {
+		return // Silently fail
+	}
+
+	a.refreshRepositories()
+
+	// Select the newly added repo
+	for i, repo := range a.repositories {
+		if strings.HasSuffix(repo.Path, strings.TrimPrefix(path, "~")) || repo.Path == path {
+			a.repoSelectedIdx = i
+			a.refreshSessionsForSelectedRepo()
+			break
+		}
+	}
+}
+
+// deleteSelectedRepo removes the selected repository from the config.
+func (a *StructuredApp) deleteSelectedRepo() {
+	if len(a.repositories) == 0 || a.repoSelectedIdx >= len(a.repositories) {
+		return
+	}
+
+	repo := a.repositories[a.repoSelectedIdx]
+	if err := a.config.RemoveRepository(repo.Path); err != nil {
+		return // Silently fail
+	}
+
+	// Adjust selection
+	if a.repoSelectedIdx > 0 {
+		a.repoSelectedIdx--
+	}
+	a.refreshRepositories()
+}
+
+// deleteSelectedSessionFromRepo kills the selected session in the sessions pane.
+func (a *StructuredApp) deleteSelectedSessionFromRepo() {
+	if len(a.sessionsForRepo) == 0 || a.sessionSelectedIdx >= len(a.sessionsForRepo) {
+		return
+	}
+
+	sess := a.sessionsForRepo[a.sessionSelectedIdx]
+
+	// Delete via session manager (kills tmux session, optionally removes worktree)
+	a.sessionManager.DeleteSession(sess.Name, false) // Don't remove worktree by default
+
 	// Remove from views if loaded
-	if _, ok := a.views[sessionName]; ok {
-		delete(a.views, sessionName)
+	if _, ok := a.views[sess.Name]; ok {
+		delete(a.views, sess.Name)
 	}
 
 	// Remove from sessions list if it's the current one
 	for i, s := range a.sessions {
-		if s == sessionName {
+		if s == sess.Name {
 			a.sessions = append(a.sessions[:i], a.sessions[i+1:]...)
 			if a.activeIdx >= len(a.sessions) && a.activeIdx > 0 {
 				a.activeIdx--
@@ -1157,35 +1418,9 @@ func (a *StructuredApp) deleteSelectedSession() {
 		}
 	}
 
-	// Refresh the available sessions list
+	// Refresh sessions
+	a.refreshSessionsForSelectedRepo()
 	a.refreshAvailableSessions()
-}
-
-// createNewSession creates a new tmux session with Claude.
-func (a *StructuredApp) createNewSession(name string) {
-	if name == "" {
-		return
-	}
-
-	// Get current working directory
-	cwd, _ := os.Getwd()
-
-	// Create the tmux session with Claude command
-	if err := a.tmuxClient.CreateSession(name, cwd, true); err != nil {
-		return // Silently fail
-	}
-
-	// Refresh available sessions
-	a.refreshAvailableSessions()
-
-	// Select the new session
-	for i, s := range a.availableSessions {
-		if s == name {
-			a.sidebarSelectedIdx = i
-			a.loadSession(name)
-			break
-		}
-	}
 }
 
 // makeInputEditor creates an editor function for the input modal.

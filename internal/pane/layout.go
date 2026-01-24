@@ -115,3 +115,36 @@ func CalculateSidebarLayout(maxX, maxY int) SidebarLayout {
 		Main:    Layout{sidebarWidth, 0, maxX - 1, maxY - 1},
 	}
 }
+
+// UnifiedSidebarLayout holds the repos panel, sessions panel, and main view layouts.
+type UnifiedSidebarLayout struct {
+	Repos    Layout
+	Sessions Layout
+	Main     Layout
+}
+
+// CalculateUnifiedSidebarLayout returns layouts for the unified repo manager view:
+// - Repos panel (top-left, ~40% of sidebar height)
+// - Sessions panel (bottom-left, ~60% of sidebar height)
+// - Main view (right side)
+func CalculateUnifiedSidebarLayout(maxX, maxY int) UnifiedSidebarLayout {
+	sidebarWidth := SidebarWidth
+	if sidebarWidth > maxX/3 {
+		sidebarWidth = maxX / 3
+	}
+	if sidebarWidth < 10 {
+		sidebarWidth = 10
+	}
+
+	// Repos panel takes 40% of sidebar height
+	repoHeight := maxY * 40 / 100
+	if repoHeight < 5 {
+		repoHeight = 5
+	}
+
+	return UnifiedSidebarLayout{
+		Repos:    Layout{0, 0, sidebarWidth - 1, repoHeight - 1},
+		Sessions: Layout{0, repoHeight, sidebarWidth - 1, maxY - 1},
+		Main:     Layout{sidebarWidth, 0, maxX - 1, maxY - 1},
+	}
+}
