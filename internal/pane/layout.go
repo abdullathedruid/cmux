@@ -4,7 +4,7 @@ package pane
 const StatusBarHeight = 2
 
 // SidebarWidth is the width of the sidebar in characters.
-const SidebarWidth = 24
+const SidebarWidth = 30
 
 // Layout represents the position and size of a pane in screen coordinates.
 type Layout struct {
