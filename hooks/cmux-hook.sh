@@ -27,5 +27,8 @@ SESSION=$(tmux display-message -p '#{session_name}' 2>/dev/null) || exit 0
 [ -z "$SESSION" ] && exit 0
 
 # Read event, add timestamp and tmux session, append as single line
+# Create parent directory in case session name contains slashes
+OUTFILE="$DIR/$SESSION.jsonl"
+mkdir -p "$(dirname "$OUTFILE")"
 jq -c --arg ts "$(date -Iseconds)" --arg tmux "$SESSION" '. + {ts: $ts, tmux_session: $tmux}' \
-    >> "$DIR/$SESSION.jsonl"
+    >> "$OUTFILE"

@@ -44,8 +44,11 @@ echo "$INPUT" | jq '.' >> "$LOGFILE" 2>/dev/null || echo "$INPUT" >> "$LOGFILE"
 echo "" >> "$LOGFILE"
 
 # Append event to JSONL file for structured view
+# Create parent directory in case session name contains slashes
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-echo "$INPUT" | jq -c --arg ts "$TIMESTAMP" --arg tmux "$SESSION" '. + {ts: $ts, tmux_session: $tmux}' >> "$EVENTSDIR/$SESSION.jsonl"
+EVENTFILE="$EVENTSDIR/$SESSION.jsonl"
+mkdir -p "$(dirname "$EVENTFILE")"
+echo "$INPUT" | jq -c --arg ts "$TIMESTAMP" --arg tmux "$SESSION" '. + {ts: $ts, tmux_session: $tmux}' >> "$EVENTFILE"
 
 # Parse fields
 EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
@@ -77,6 +80,9 @@ case "$EVENT" in
 esac
 
 # Write minimal status file
+# Create parent directory in case session name contains slashes
+STATUSFILE="$STATUSDIR/$SESSION.status"
+mkdir -p "$(dirname "$STATUSFILE")"
 jq -n \
     --arg status "$STATUS" \
     --arg tool "$TOOL" \
@@ -84,4 +90,4 @@ jq -n \
     --arg session_id "$SESSION_ID" \
     --argjson ts "$(date +%s)" \
     '{status: $status, tool: $tool, transcript_path: $transcript, session_id: $session_id, ts: $ts}' \
-    > "$STATUSDIR/$SESSION.status"
+    > "$STATUSFILE"
