@@ -49,7 +49,7 @@ type Message struct {
 	Content string `json:"content,omitempty"`
 
 	// For assistant messages
-	TextPreview string     `json:"text_preview,omitempty"` // First ~500 chars
+	TextPreview string     `json:"text_preview,omitempty"` // Full text content
 	ToolCalls   []ToolCall `json:"tool_calls,omitempty"`
 	IsComplete  bool       `json:"is_complete"` // stop_reason == "end_turn"
 

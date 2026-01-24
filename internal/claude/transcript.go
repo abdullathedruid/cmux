@@ -186,12 +186,7 @@ func (r *TranscriptReader) parseAssistantMessage(uuid, timestamp string, raw jso
 				Text string `json:"text"`
 			}
 			json.Unmarshal(block, &t)
-			// Truncate for preview
-			if len(t.Text) > 500 {
-				m.TextPreview += t.Text[:500] + "..."
-			} else {
-				m.TextPreview += t.Text
-			}
+			m.TextPreview += t.Text
 
 		case "tool_use":
 			var t struct {
