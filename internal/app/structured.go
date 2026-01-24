@@ -447,8 +447,10 @@ func (a *StructuredApp) layout(g *gocui.Gui) error {
 
 // layoutWithSidebar renders the sidebar and main area.
 func (a *StructuredApp) layoutWithSidebar(g *gocui.Gui, maxX, paneMaxY int, currentMode input.Mode) error {
+	// No status bar in sidebar mode - use full height
 	maxY := paneMaxY + pane.StatusBarHeight
-	sidebarLayout := pane.CalculateSidebarLayout(maxX, paneMaxY)
+	fullHeight := maxY
+	sidebarLayout := pane.CalculateSidebarLayout(maxX, fullHeight)
 
 	// Render sidebar
 	sidebarView, err := g.SetView("sidebar", sidebarLayout.Sidebar.X0, sidebarLayout.Sidebar.Y0,
@@ -497,14 +499,8 @@ func (a *StructuredApp) layoutWithSidebar(g *gocui.Gui, maxX, paneMaxY int, curr
 		fmt.Fprint(mainView, "\n  Press 'n' to create a new session\n  or select an existing session from the sidebar")
 	}
 
-	// Render status bar at the bottom
-	statusBarView, err := g.SetView("status-bar", 0, maxY-pane.StatusBarHeight, maxX-1, maxY, 0)
-	if err != nil {
-		if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
-			return err
-		}
-	}
-	a.configureStatusBar(statusBarView, currentMode)
+	// Delete status bar if it exists (not needed in sidebar mode)
+	g.DeleteView("status-bar")
 
 	// Handle terminal modal (same as non-sidebar mode)
 	if currentMode.IsTerminal() && a.terminalCtrl != nil && a.terminalTerm != nil {
