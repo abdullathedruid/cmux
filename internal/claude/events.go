@@ -168,6 +168,13 @@ func (w *EventWatcher) watchLoop() {
 			if !ok {
 				return
 			}
+			if event.Op&fsnotify.Create != 0 {
+				// Watch newly created subdirectories
+				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+					w.watcher.Add(event.Name)
+					continue
+				}
+			}
 			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
 				if filepath.Ext(event.Name) == ".jsonl" {
 					w.handleFile(event.Name)
@@ -184,16 +191,22 @@ func (w *EventWatcher) watchLoop() {
 }
 
 func (w *EventWatcher) scanAll() {
-	entries, err := os.ReadDir(w.eventsDir)
-	if err != nil {
-		return
-	}
-
-	for _, entry := range entries {
-		if filepath.Ext(entry.Name()) == ".jsonl" {
-			w.handleFile(filepath.Join(w.eventsDir, entry.Name()))
+	filepath.Walk(w.eventsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip errors
 		}
-	}
+		if info.IsDir() {
+			// Watch subdirectories for new files
+			if path != w.eventsDir {
+				w.watcher.Add(path)
+			}
+			return nil
+		}
+		if filepath.Ext(path) == ".jsonl" {
+			w.handleFile(path)
+		}
+		return nil
+	})
 }
 
 func (w *EventWatcher) pollAll() {
@@ -213,8 +226,13 @@ func (w *EventWatcher) pollAll() {
 }
 
 func (w *EventWatcher) handleFile(path string) {
-	tmuxSession := filepath.Base(path)
-	tmuxSession = tmuxSession[:len(tmuxSession)-len(".jsonl")]
+	// Extract session name by removing eventsDir prefix and .jsonl suffix
+	// This preserves subdirectory structure (e.g., "cmux/fix-chat" from "events/cmux/fix-chat.jsonl")
+	relPath, err := filepath.Rel(w.eventsDir, path)
+	if err != nil {
+		return
+	}
+	tmuxSession := relPath[:len(relPath)-len(".jsonl")]
 
 	w.mu.Lock()
 	reader, exists := w.readers[tmuxSession]
