@@ -507,6 +507,42 @@ func (a *StructuredApp) setupKeybindings() error {
 		return err
 	}
 
+	// Scroll up with Ctrl+U (half page)
+	if err := a.gui.SetKeybinding("", gocui.KeyCtrlU, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() {
+			a.scrollActiveView(true)
+		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendKeys("C-u")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Scroll down with Ctrl+D (half page)
+	if err := a.gui.SetKeybinding("", gocui.KeyCtrlD, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() {
+			a.scrollActiveView(false)
+		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendKeys("C-d")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Scroll to bottom with 'G' in normal mode
+	if err := a.gui.SetKeybinding("", 'G', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() {
+			a.scrollToBottom()
+		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendLiteralKeys("G")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
 	// Terminal modal key passthrough
 	if err := a.setupTerminalModalPassthrough(); err != nil {
 		return err
@@ -665,6 +701,35 @@ func (a *StructuredApp) ActiveView() *claude.View {
 		return nil
 	}
 	return a.views[session]
+}
+
+// scrollActiveView scrolls the active view up or down by half a page.
+func (a *StructuredApp) scrollActiveView(up bool) {
+	view := a.ActiveView()
+	if view == nil {
+		return
+	}
+
+	_, height := view.Dimensions()
+	scrollAmount := height / 2
+	if scrollAmount < 1 {
+		scrollAmount = 1
+	}
+
+	if up {
+		view.ScrollUp(scrollAmount)
+	} else {
+		view.ScrollDown(scrollAmount)
+	}
+}
+
+// scrollToBottom scrolls the active view to show the latest content.
+func (a *StructuredApp) scrollToBottom() {
+	view := a.ActiveView()
+	if view == nil {
+		return
+	}
+	view.ScrollToBottom()
 }
 
 // enterTerminalModal starts the terminal modal for the active session.

@@ -25,6 +25,9 @@ type View struct {
 	width  int
 	height int
 
+	// Scroll state (offset from bottom, 0 = show latest)
+	scrollOffset int
+
 	// Optional filter: only accept events from this cwd
 	cwdFilter string
 }
@@ -224,11 +227,48 @@ func (v *View) Render() string {
 	defer v.mu.Unlock()
 
 	if v.dirty {
-		v.lastRender = v.renderer.Render(v.session)
+		v.lastRender = v.renderer.RenderWithScroll(v.session, v.scrollOffset)
 		v.dirty = false
 	}
 
 	return v.lastRender
+}
+
+// ScrollUp scrolls the view up by the given number of lines.
+func (v *View) ScrollUp(lines int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	v.scrollOffset += lines
+	v.dirty = true
+}
+
+// ScrollDown scrolls the view down by the given number of lines.
+func (v *View) ScrollDown(lines int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	v.scrollOffset -= lines
+	if v.scrollOffset < 0 {
+		v.scrollOffset = 0
+	}
+	v.dirty = true
+}
+
+// ScrollToBottom resets scroll to show the latest content.
+func (v *View) ScrollToBottom() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	v.scrollOffset = 0
+	v.dirty = true
+}
+
+// IsScrolled returns true if the view is scrolled up from the bottom.
+func (v *View) IsScrolled() bool {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.scrollOffset > 0
 }
 
 // IsDirty returns true if the view needs re-rendering.

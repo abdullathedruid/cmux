@@ -46,8 +46,13 @@ func (r *Renderer) Resize(width, height int) {
 	r.height = height
 }
 
-// Render renders a session to a string.
+// Render renders a session to a string (no scroll offset).
 func (r *Renderer) Render(session *Session) string {
+	return r.RenderWithScroll(session, 0)
+}
+
+// RenderWithScroll renders a session with a scroll offset from the bottom.
+func (r *Renderer) RenderWithScroll(session *Session, scrollOffset int) string {
 	if session == nil {
 		return r.renderEmpty()
 	}
@@ -61,8 +66,8 @@ func (r *Renderer) Render(session *Session) string {
 		contentHeight = 1
 	}
 
-	// Render messages (bottom-aligned, most recent visible)
-	lines := r.renderMessages(session.Messages, contentHeight)
+	// Render messages with scroll offset
+	lines := r.renderMessages(session.Messages, contentHeight, scrollOffset)
 
 	// Pad to fill height
 	for i := len(lines); i < contentHeight; i++ {
@@ -77,8 +82,8 @@ func (r *Renderer) Render(session *Session) string {
 	sb.WriteString(r.renderActivityLine(session))
 	sb.WriteString("\n")
 
-	// Render status bar
-	sb.WriteString(r.renderStatusBar(session))
+	// Render status bar (with scroll indicator if scrolled)
+	sb.WriteString(r.renderStatusBar(session, scrollOffset > 0))
 
 	return sb.String()
 }
@@ -92,7 +97,7 @@ func (r *Renderer) renderEmpty() string {
 	return sb.String()
 }
 
-func (r *Renderer) renderMessages(messages []Message, maxLines int) []string {
+func (r *Renderer) renderMessages(messages []Message, maxLines int, scrollOffset int) []string {
 	var allLines []string
 	var prevRole string
 	var prevHadTools bool
@@ -113,11 +118,28 @@ func (r *Renderer) renderMessages(messages []Message, maxLines int) []string {
 		prevHadTools = len(msg.ToolCalls) > 0
 	}
 
-	// Return only the last maxLines
-	if len(allLines) > maxLines {
-		return allLines[len(allLines)-maxLines:]
+	// Apply scroll offset and return maxLines
+	totalLines := len(allLines)
+	if totalLines <= maxLines {
+		return allLines
 	}
-	return allLines
+
+	// Calculate the window to show
+	// scrollOffset=0 means show the bottom (latest)
+	// scrollOffset>0 means scroll up from the bottom
+	end := totalLines - scrollOffset
+	if end > totalLines {
+		end = totalLines
+	}
+	if end < maxLines {
+		end = maxLines
+	}
+	start := end - maxLines
+	if start < 0 {
+		start = 0
+	}
+
+	return allLines[start:end]
 }
 
 func (r *Renderer) renderMessageGrouped(msg Message, showHeader bool) []string {
@@ -275,9 +297,15 @@ func (r *Renderer) renderPermissionPrompt(session *Session) string {
 	return strings.Join(lines, "\n")
 }
 
-func (r *Renderer) renderStatusBar(session *Session) string {
+func (r *Renderer) renderStatusBar(session *Session, scrolled bool) string {
 	left := fmt.Sprintf(" %s ", session.TmuxSession)
-	right := fmt.Sprintf(" %s ", session.Status)
+
+	// Add scroll indicator if scrolled
+	status := string(session.Status)
+	if scrolled {
+		status = "↑ scrolled"
+	}
+	right := fmt.Sprintf(" %s ", status)
 
 	// Pad middle
 	middle := r.width - len(left) - len(right)
