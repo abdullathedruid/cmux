@@ -391,11 +391,9 @@ func (r *Renderer) highlightCode(lang, code string) []string {
 
 func (r *Renderer) formatCodeBlock(code string) []string {
 	var lines []string
-	lines = append(lines, "    \033[90m```\033[0m")
 	for _, line := range strings.Split(strings.TrimRight(code, "\n"), "\n") {
 		lines = append(lines, "    "+line)
 	}
-	lines = append(lines, "    \033[90m```\033[0m")
 	return lines
 }
 
