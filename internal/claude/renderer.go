@@ -1,7 +1,9 @@
 package claude
 
 import (
+	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -10,6 +12,10 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+	"github.com/hexops/gotextdiff"
+	"github.com/hexops/gotextdiff/myers"
+	"github.com/hexops/gotextdiff/span"
+	"github.com/mattn/go-runewidth"
 )
 
 // Renderer renders a Claude session to a string for display.
@@ -167,7 +173,7 @@ func (r *Renderer) renderMessageGrouped(msg Message, showHeader bool, isStreamin
 
 		// Tool calls first (they usually precede text in Claude's responses)
 		for _, tool := range msg.ToolCalls {
-			lines = append(lines, r.renderToolCall(tool))
+			lines = append(lines, r.renderToolCall(tool)...)
 		}
 
 		// Text content (with gap after tool calls)
@@ -199,7 +205,7 @@ func (r *Renderer) styleAssistantHeader(ts time.Time) string {
 	return fmt.Sprintf("\033[1;32m◀ Claude\033[0m \033[90m%s\033[0m", timeStr)
 }
 
-func (r *Renderer) renderToolCall(tool ToolCall) string {
+func (r *Renderer) renderToolCall(tool ToolCall) []string {
 	icon := r.toolIcon(tool.Name)
 	statusIcon := r.statusIcon(tool.Status)
 
@@ -214,7 +220,146 @@ func (r *Renderer) renderToolCall(tool ToolCall) string {
 		summary = summary[:maxLen-3] + "..."
 	}
 
-	return fmt.Sprintf("    %s %s %s", statusIcon, icon, summary)
+	header := fmt.Sprintf("    %s %s %s", statusIcon, icon, summary)
+
+	// For Edit tools, show the diff
+	if tool.Name == "Edit" && len(tool.Input) > 0 {
+		diffLines := r.renderEditDiff(tool.Input)
+		if len(diffLines) > 0 {
+			return append([]string{header}, diffLines...)
+		}
+	}
+
+	return []string{header}
+}
+
+func (r *Renderer) renderEditDiff(input []byte) []string {
+	var data struct {
+		FilePath  string `json:"file_path"`
+		OldString string `json:"old_string"`
+		NewString string `json:"new_string"`
+	}
+	if err := json.Unmarshal(input, &data); err != nil {
+		return nil
+	}
+
+	if data.OldString == "" && data.NewString == "" {
+		return nil
+	}
+
+	// Get lexer based on file extension
+	lexer := lexers.Match(data.FilePath)
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
+	lexer = chroma.Coalesce(lexer)
+
+	// Generate unified diff using Myers algorithm
+	filename := filepath.Base(data.FilePath)
+	edits := myers.ComputeEdits(span.URIFromPath(filename), data.OldString, data.NewString)
+	unified := gotextdiff.ToUnified(filename, filename, data.OldString, edits)
+
+	var lines []string
+
+	// Calculate diff area width (terminal width minus indent "      " and sign "+ ")
+	diffWidth := r.width - 8
+	if diffWidth < 20 {
+		diffWidth = 20
+	}
+
+	// Parse and render each hunk
+	for _, hunk := range unified.Hunks {
+		// Hunk header
+		lines = append(lines, fmt.Sprintf("      \033[36m@@ -%d,%d +%d,%d @@\033[0m",
+			hunk.FromLine, len(hunk.Lines), hunk.ToLine, len(hunk.Lines)))
+
+		// Render each line in the hunk
+		for _, line := range hunk.Lines {
+			content := line.Content
+			// Strip all newlines and carriage returns
+			content = strings.ReplaceAll(content, "\n", "")
+			content = strings.ReplaceAll(content, "\r", "")
+			content = expandTabs(content) // Expand tabs for consistent width
+
+			// Truncate if too long to prevent wrapping
+			visibleLen := r.visibleLength(content)
+			if visibleLen > diffWidth-3 {
+				content = r.truncateToWidth(content, diffWidth-6) + "..."
+				visibleLen = r.visibleLength(content)
+			}
+
+			highlighted := r.highlightLine(lexer, content)
+
+			switch line.Kind {
+			case gotextdiff.Delete:
+				// Red background (dark) for deletions
+				bgCode := "\033[48;5;52m"
+				// Replace resets to maintain background, also handle background-specific resets
+				h := strings.ReplaceAll(highlighted, "\033[0m", "\033[0m"+bgCode)
+				h = strings.ReplaceAll(h, "\033[49m", bgCode) // default background reset
+				lines = append(lines, fmt.Sprintf("      %s- %s%s\033[K\033[0m", bgCode, h, bgCode))
+			case gotextdiff.Insert:
+				// Green background (dark) for additions
+				bgCode := "\033[48;5;22m"
+				h := strings.ReplaceAll(highlighted, "\033[0m", "\033[0m"+bgCode)
+				h = strings.ReplaceAll(h, "\033[49m", bgCode)
+				lines = append(lines, fmt.Sprintf("      %s+ %s%s\033[K\033[0m", bgCode, h, bgCode))
+			default:
+				// Context lines (unchanged)
+				lines = append(lines, fmt.Sprintf("        %s", highlighted))
+			}
+		}
+	}
+
+	return lines
+}
+
+// visibleLength returns the visible terminal width of a string (excluding ANSI codes)
+func (r *Renderer) visibleLength(s string) int {
+	// Strip ANSI escape codes
+	ansiRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	clean := ansiRegex.ReplaceAllString(s, "")
+	// Expand tabs to spaces (assuming 4-space tabs)
+	clean = strings.ReplaceAll(clean, "\t", "    ")
+	return runewidth.StringWidth(clean)
+}
+
+// expandTabs converts tabs to spaces for consistent display
+func expandTabs(s string) string {
+	return strings.ReplaceAll(s, "\t", "    ")
+}
+
+// truncateToWidth truncates a string to fit within the given visible width
+func (r *Renderer) truncateToWidth(s string, maxWidth int) string {
+	width := 0
+	for i, char := range s {
+		charWidth := runewidth.RuneWidth(char)
+		if width+charWidth > maxWidth {
+			return s[:i]
+		}
+		width += charWidth
+	}
+	return s
+}
+
+// highlightLine applies syntax highlighting to a single line
+func (r *Renderer) highlightLine(lexer chroma.Lexer, line string) string {
+	iterator, err := lexer.Tokenise(nil, line)
+	if err != nil {
+		return line
+	}
+
+	var buf strings.Builder
+	err = r.formatter.Format(&buf, r.style, iterator)
+	if err != nil {
+		return line
+	}
+
+	// Strip all newlines that chroma might add
+	result := buf.String()
+	result = strings.ReplaceAll(result, "\n", "")
+	result = strings.ReplaceAll(result, "\r", "")
+	return result
 }
 
 func (r *Renderer) toolIcon(name string) string {

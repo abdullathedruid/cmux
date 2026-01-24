@@ -7,6 +7,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-errors/errors v1.0.2
+	github.com/hexops/gotextdiff v1.0.3
 	github.com/jesseduffield/gocui v0.3.1-0.20260111170441-330357056207
 	github.com/mattn/go-runewidth v0.0.19
 	github.com/vito/midterm v0.2.3

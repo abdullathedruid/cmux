@@ -200,6 +200,7 @@ func (r *TranscriptReader) parseAssistantMessage(uuid, timestamp string, raw jso
 				Name:         t.Name,
 				Status:       ToolComplete,
 				InputSummary: SummarizeToolInput(t.Name, t.Input),
+				Input:        t.Input,
 			})
 		}
 	}
