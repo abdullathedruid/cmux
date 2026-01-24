@@ -87,7 +87,9 @@ func (c *RealClient) ListSessions() ([]Session, error) {
 }
 
 // DiscoverClaudeSessions returns tmux sessions that have Claude Code running.
-// Detection: checks if session has event file in $TMPDIR/cmux/events/{session}.jsonl
+// Detection strategy:
+// 1. Check if session has event file in $TMPDIR/cmux/events/{session}.jsonl
+// 2. Fallback: Check if session is running a process containing "claude"
 func (c *RealClient) DiscoverClaudeSessions() ([]Session, error) {
 	allSessions, err := c.ListSessions()
 	if err != nil {
@@ -103,14 +105,76 @@ func (c *RealClient) DiscoverClaudeSessions() ([]Session, error) {
 
 	var claudeSessions []Session
 	for _, session := range allSessions {
-		// Check if event file exists for this session
+		// Check if event file exists for this session (fast path)
 		eventFile := filepath.Join(eventsDir, session.Name+".jsonl")
 		if _, err := os.Stat(eventFile); err == nil {
+			claudeSessions = append(claudeSessions, session)
+			continue
+		}
+
+		// Fallback: check if session is running claude
+		if c.isRunningClaude(session.Name) {
 			claudeSessions = append(claudeSessions, session)
 		}
 	}
 
 	return claudeSessions, nil
+}
+
+// isRunningClaude checks if a tmux session is running a claude process.
+func (c *RealClient) isRunningClaude(sessionName string) bool {
+	pid, err := c.GetPanePID(sessionName)
+	if err != nil {
+		return false
+	}
+
+	// Check the shell's child processes for claude
+	children, err := getChildProcesses(pid)
+	if err != nil {
+		return false
+	}
+
+	for _, child := range children {
+		cmdLower := strings.ToLower(child)
+		if strings.Contains(cmdLower, "claude") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// getChildProcesses returns command lines of child processes for a PID.
+func getChildProcesses(pid int) ([]string, error) {
+	cmd := exec.Command("ps", "-eo", "pid=,ppid=,args=")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	parentPID := fmt.Sprintf("%d", pid)
+	var children []string
+
+	lines := strings.Split(stdout.String(), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+
+		if fields[1] == parentPID {
+			children = append(children, strings.Join(fields[2:], " "))
+		}
+	}
+
+	return children, nil
 }
 
 // parseSessions parses tmux list-sessions output.
