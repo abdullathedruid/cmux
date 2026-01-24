@@ -15,6 +15,7 @@ import (
 	"github.com/abdullathedruid/cmux/internal/config"
 	"github.com/abdullathedruid/cmux/internal/input"
 	"github.com/abdullathedruid/cmux/internal/pane"
+	"github.com/abdullathedruid/cmux/internal/terminal"
 	"github.com/abdullathedruid/cmux/internal/ui"
 	"github.com/jesseduffield/gocui"
 )
@@ -42,6 +43,10 @@ type StructuredApp struct {
 	lastMaxX, lastMaxY int
 	lastSessionCount   int
 	lastLayouts        []pane.Layout
+
+	// Terminal modal state
+	terminalCtrl *terminal.ControlMode
+	terminalTerm *pane.SafeTerminal
 }
 
 // NewStructuredApp creates a new structured view application.
@@ -233,33 +238,86 @@ func (a *StructuredApp) layout(g *gocui.Gui) error {
 	}
 	a.configureStatusBar(statusBarView, currentMode)
 
-	// Handle input modal
-	if currentMode.IsInput() {
-		inputBuffer := a.input.InputBuffer()
-		x0, y0, x1, y1 := ui.ModalDimensions(maxX, maxY, 50, 3)
-		v, err := g.SetView("input-modal", x0, y0, x1, y1, 0)
+	// Handle terminal modal
+	if currentMode.IsTerminal() && a.terminalCtrl != nil && a.terminalTerm != nil {
+		// Calculate 80% modal dimensions
+		width := maxX * 80 / 100
+		height := maxY * 80 / 100
+		if width < 40 {
+			width = 40
+		}
+		if height < 10 {
+			height = 10
+		}
+
+		x0, y0, x1, y1 := ui.ModalDimensions(maxX, maxY, width, height)
+		v, err := g.SetView("terminal-modal", x0, y0, x1, y1, 0)
 		if err != nil {
 			if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
 				return err
 			}
 		}
-		ui.ConfigureInputModal(v, inputBuffer)
-		v.Editor = gocui.EditorFunc(a.makeInputEditor())
 
-		if _, err := g.SetCurrentView("input-modal"); err != nil {
+		// Configure terminal modal styling
+		session := a.ActiveSession()
+		v.Title = fmt.Sprintf(" %s [Ctrl+Q to exit] ", session)
+		v.Frame = true
+		v.FrameRunes = []rune{'━', '┃', '┏', '┓', '┗', '┛'}
+		v.FrameColor = gocui.ColorGreen
+		v.TitleColor = gocui.ColorGreen
+		v.Wrap = false
+		v.Editable = true
+		v.Editor = gocui.EditorFunc(a.makeTerminalModalEditor())
+
+		// Resize terminal if modal size changed
+		modalWidth := width - 2
+		modalHeight := height - 2
+		a.terminalTerm.Resize(modalHeight, modalWidth)
+		a.terminalCtrl.Resize(modalWidth, modalHeight)
+
+		// Render terminal content
+		v.Clear()
+		ui.RenderTerminal(v, a.terminalTerm)
+
+		// Set cursor position
+		cx, cy := a.terminalTerm.Cursor()
+		v.SetCursor(cx, cy)
+
+		if _, err := g.SetCurrentView("terminal-modal"); err != nil {
 			return err
 		}
 		g.Cursor = true
-		v.SetCursor(len(inputBuffer)+1, 0)
 	} else {
-		g.DeleteView("input-modal")
+		g.DeleteView("terminal-modal")
 
-		// Set focus to active view
-		if len(a.sessions) > 0 && a.activeIdx < len(a.sessions) {
-			viewName := fmt.Sprintf("pane-%d", a.activeIdx)
-			g.SetCurrentView(viewName)
+		// Handle input modal
+		if currentMode.IsInput() {
+			inputBuffer := a.input.InputBuffer()
+			x0, y0, x1, y1 := ui.ModalDimensions(maxX, maxY, 50, 3)
+			v, err := g.SetView("input-modal", x0, y0, x1, y1, 0)
+			if err != nil {
+				if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
+					return err
+				}
+			}
+			ui.ConfigureInputModal(v, inputBuffer)
+			v.Editor = gocui.EditorFunc(a.makeInputEditor())
+
+			if _, err := g.SetCurrentView("input-modal"); err != nil {
+				return err
+			}
+			g.Cursor = true
+			v.SetCursor(len(inputBuffer)+1, 0)
+		} else {
+			g.DeleteView("input-modal")
+
+			// Set focus to active view
+			if len(a.sessions) > 0 && a.activeIdx < len(a.sessions) {
+				viewName := fmt.Sprintf("pane-%d", a.activeIdx)
+				g.SetCurrentView(viewName)
+			}
+			g.Cursor = false
 		}
-		g.Cursor = false
 	}
 
 	// Save layouts for next comparison
@@ -338,6 +396,10 @@ func (a *StructuredApp) setupKeybindings() error {
 		if a.input.Mode().IsNormal() {
 			return gocui.ErrQuit
 		}
+		// Forward to terminal modal
+		if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendLiteralKeys("q")
+		}
 		return nil
 	}); err != nil {
 		return err
@@ -347,14 +409,16 @@ func (a *StructuredApp) setupKeybindings() error {
 	for _, key := range []rune{'h', 'j', 'k', 'l'} {
 		k := key
 		if err := a.gui.SetKeybinding("", k, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-			if !a.input.Mode().IsNormal() {
-				return nil
-			}
-			switch k {
-			case 'h', 'k':
-				a.prevSession()
-			case 'j', 'l':
-				a.nextSession()
+			if a.input.Mode().IsNormal() {
+				switch k {
+				case 'h', 'k':
+					a.prevSession()
+				case 'j', 'l':
+					a.nextSession()
+				}
+			} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+				// Forward to terminal modal
+				a.terminalCtrl.SendLiteralKeys(string(k))
 			}
 			return nil
 		}); err != nil {
@@ -366,6 +430,12 @@ func (a *StructuredApp) setupKeybindings() error {
 	for i := 1; i <= 9; i++ {
 		num := i
 		if err := a.gui.SetKeybinding("", rune('0'+i), gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+			// In terminal mode, forward to terminal
+			if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+				a.terminalCtrl.SendLiteralKeys(fmt.Sprintf("%d", num))
+				return nil
+			}
+
 			// Check if active session has pending permission
 			if a.activeIdx < len(a.sessions) {
 				session := a.sessions[a.activeIdx]
@@ -394,41 +464,54 @@ func (a *StructuredApp) setupKeybindings() error {
 		}
 	}
 
-	// Enter terminal mode with 'i' or Enter
-	for _, key := range []interface{}{'i', gocui.KeyEnter} {
-		k := key
-		if err := a.gui.SetKeybinding("", k, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-			if a.input.Mode().IsNormal() {
-				a.input.SetMode(input.ModeTerminal)
-			}
-			return nil
-		}); err != nil {
-			return err
+	// Enter terminal mode with 'i'
+	if err := a.gui.SetKeybinding("", 'i', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() {
+			return a.enterTerminalModal()
 		}
-	}
-
-	// Exit terminal mode with Ctrl+Q
-	if err := a.gui.SetKeybinding("", gocui.KeyCtrlQ, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		if a.input.Mode().IsTerminal() {
-			a.input.SetMode(input.ModeNormal)
+		// In terminal mode, forward 'i' to tmux
+		if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendLiteralKeys("i")
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
 
-	// Terminal mode key passthrough
-	if err := a.setupTerminalPassthrough(); err != nil {
+	// Enter terminal mode with Enter
+	if err := a.gui.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() {
+			return a.enterTerminalModal()
+		}
+		// In terminal mode, forward Enter to tmux
+		if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendKeys("Enter")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Exit terminal mode with Ctrl+Q
+	if err := a.gui.SetKeybinding("", gocui.KeyCtrlQ, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsTerminal() {
+			a.exitTerminalModal()
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Terminal modal key passthrough
+	if err := a.setupTerminalModalPassthrough(); err != nil {
 		return err
 	}
 
 	// Escape key
 	if err := a.gui.SetKeybinding("", gocui.KeyEsc, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		if a.input.Mode().IsTerminal() {
+		if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
 			// Send escape to tmux
-			if a.activeIdx < len(a.sessions) {
-				claude.SendEscape(a.sessions[a.activeIdx])
-			}
+			a.terminalCtrl.SendKeys("Escape")
 		} else if a.input.Mode().IsInput() {
 			a.input.ExitInputMode()
 		}
@@ -437,11 +520,10 @@ func (a *StructuredApp) setupKeybindings() error {
 		return err
 	}
 
-
 	// Ctrl+C in terminal mode
 	if err := a.gui.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		if a.input.Mode().IsTerminal() && a.activeIdx < len(a.sessions) {
-			claude.SendInterrupt(a.sessions[a.activeIdx])
+		if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendKeys("C-c")
 		}
 		return nil
 	}); err != nil {
@@ -451,44 +533,14 @@ func (a *StructuredApp) setupKeybindings() error {
 	return nil
 }
 
-// setupTerminalPassthrough sets up keybindings to pass printable characters to tmux.
-func (a *StructuredApp) setupTerminalPassthrough() error {
-	// Printable ASCII characters
-	for ch := rune(32); ch < 127; ch++ {
-		// Skip characters we handle elsewhere
-		if ch == 'q' || ch == 'h' || ch == 'j' || ch == 'k' || ch == 'l' ||
-			ch == 'i' || ch == 'y' || ch == 'n' || ch == 'a' ||
-			(ch >= '1' && ch <= '9') {
-			continue
-		}
-
-		c := ch
-		if err := a.gui.SetKeybinding("", c, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-			if a.input.Mode().IsTerminal() && a.activeIdx < len(a.sessions) {
-				claude.SendKeys(a.sessions[a.activeIdx], string(c))
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-	}
-
-	// Enter key in terminal mode
-	if err := a.gui.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		if a.input.Mode().IsTerminal() && a.activeIdx < len(a.sessions) {
-			claude.SendKeys(a.sessions[a.activeIdx], "Enter")
-		} else if a.input.Mode().IsNormal() {
-			a.input.SetMode(input.ModeTerminal)
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
+// setupTerminalModalPassthrough sets up keybindings to pass keys to the terminal modal.
+func (a *StructuredApp) setupTerminalModalPassthrough() error {
 	// Backspace
 	if err := a.gui.SetKeybinding("", gocui.KeyBackspace2, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		if a.input.Mode().IsTerminal() && a.activeIdx < len(a.sessions) {
-			claude.SendKeys(a.sessions[a.activeIdx], "BSpace")
+		if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendKeys("BSpace")
+		} else if a.input.Mode().IsInput() {
+			a.input.BackspaceInputBuffer()
 		}
 		return nil
 	}); err != nil {
@@ -497,8 +549,8 @@ func (a *StructuredApp) setupTerminalPassthrough() error {
 
 	// Space
 	if err := a.gui.SetKeybinding("", gocui.KeySpace, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		if a.input.Mode().IsTerminal() && a.activeIdx < len(a.sessions) {
-			claude.SendKeys(a.sessions[a.activeIdx], "Space")
+		if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendKeys("Space")
 		}
 		return nil
 	}); err != nil {
@@ -507,8 +559,8 @@ func (a *StructuredApp) setupTerminalPassthrough() error {
 
 	// Tab
 	if err := a.gui.SetKeybinding("", gocui.KeyTab, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		if a.input.Mode().IsTerminal() && a.activeIdx < len(a.sessions) {
-			claude.SendKeys(a.sessions[a.activeIdx], "Tab")
+		if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendKeys("Tab")
 		}
 		return nil
 	}); err != nil {
@@ -526,8 +578,8 @@ func (a *StructuredApp) setupTerminalPassthrough() error {
 		k := key
 		n := name
 		if err := a.gui.SetKeybinding("", k, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-			if a.input.Mode().IsTerminal() && a.activeIdx < len(a.sessions) {
-				claude.SendKeys(a.sessions[a.activeIdx], n)
+			if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+				a.terminalCtrl.SendKeys(n)
 			}
 			return nil
 		}); err != nil {
@@ -569,6 +621,22 @@ func (a *StructuredApp) makeInputEditor() func(v *gocui.View, key gocui.Key, ch 
 	}
 }
 
+// makeTerminalModalEditor creates an editor function for the terminal modal.
+func (a *StructuredApp) makeTerminalModalEditor() func(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) bool {
+	return func(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) bool {
+		if !a.input.Mode().IsTerminal() || a.terminalCtrl == nil {
+			return false
+		}
+
+		// Handle printable characters
+		if ch != 0 && mod == gocui.ModNone {
+			a.terminalCtrl.SendLiteralKeys(string(ch))
+			return true
+		}
+		return false
+	}
+}
+
 // ActiveSession returns the currently active session name.
 func (a *StructuredApp) ActiveSession() string {
 	if a.activeIdx < len(a.sessions) {
@@ -584,6 +652,65 @@ func (a *StructuredApp) ActiveView() *claude.View {
 		return nil
 	}
 	return a.views[session]
+}
+
+// enterTerminalModal starts the terminal modal for the active session.
+func (a *StructuredApp) enterTerminalModal() error {
+	session := a.ActiveSession()
+	if session == "" {
+		return nil
+	}
+
+	// Calculate modal dimensions (80% of screen)
+	maxX, maxY := a.gui.Size()
+	width := maxX * 80 / 100
+	height := maxY * 80 / 100
+	if width < 40 {
+		width = 40
+	}
+	if height < 10 {
+		height = 10
+	}
+
+	// Create control mode connection
+	a.terminalCtrl = terminal.NewControlMode(session)
+	a.terminalTerm = pane.NewSafeTerminal(height-2, width-2) // Account for borders
+
+	if err := a.terminalCtrl.Start(width-2, height-2); err != nil {
+		a.terminalCtrl = nil
+		a.terminalTerm = nil
+		return fmt.Errorf("starting control mode: %w", err)
+	}
+
+	// Start output processing goroutine
+	go a.processTerminalOutput()
+
+	a.input.SetMode(input.ModeTerminal)
+	return nil
+}
+
+// exitTerminalModal closes the terminal modal and cleans up.
+func (a *StructuredApp) exitTerminalModal() {
+	if a.terminalCtrl != nil {
+		a.terminalCtrl.Close()
+		a.terminalCtrl = nil
+	}
+	a.terminalTerm = nil
+	a.input.SetMode(input.ModeNormal)
+}
+
+// processTerminalOutput reads from the terminal control mode and writes to the emulator.
+func (a *StructuredApp) processTerminalOutput() {
+	if a.terminalCtrl == nil {
+		return
+	}
+
+	for data := range a.terminalCtrl.OutputChan() {
+		if a.terminalTerm != nil {
+			a.terminalTerm.Write(data)
+			a.gui.Update(func(g *gocui.Gui) error { return nil })
+		}
+	}
 }
 
 // getTmuxSessionCwd gets the working directory of a tmux session's active pane.
