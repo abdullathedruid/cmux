@@ -2,19 +2,42 @@ package claude
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/formatters"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
 )
 
 // Renderer renders a Claude session to a string for display.
 type Renderer struct {
-	width  int
-	height int
+	width     int
+	height    int
+	formatter chroma.Formatter
+	style     *chroma.Style
 }
+
+// codeBlockRegex matches fenced code blocks with optional language
+var codeBlockRegex = regexp.MustCompile("(?s)```(\\w*)\\n(.*?)```")
+
+// Inline markdown patterns
+var (
+	boldRegex       = regexp.MustCompile(`\*\*(.+?)\*\*`)
+	italicRegex     = regexp.MustCompile(`(?:^|[^*])\*([^*]+?)\*(?:[^*]|$)`)
+	inlineCodeRegex = regexp.MustCompile("`([^`]+)`")
+)
 
 // NewRenderer creates a renderer with the given dimensions.
 func NewRenderer(width, height int) *Renderer {
-	return &Renderer{width: width, height: height}
+	return &Renderer{
+		width:     width,
+		height:    height,
+		formatter: formatters.TTY256,
+		style:     styles.Get("monokai"),
+	}
 }
 
 // Resize updates the renderer dimensions.
@@ -106,7 +129,7 @@ func (r *Renderer) renderMessageGrouped(msg Message, showHeader bool) []string {
 			lines = append(lines, "") // Blank line before new group
 			lines = append(lines, r.styleUserHeader(msg.Timestamp))
 		}
-		lines = append(lines, r.wrapText(msg.Content, r.width-4, "    ")...)
+		lines = append(lines, r.renderMarkdown(msg.Content)...)
 
 	case "assistant":
 		if showHeader {
@@ -124,7 +147,7 @@ func (r *Renderer) renderMessageGrouped(msg Message, showHeader bool) []string {
 			if len(msg.ToolCalls) > 0 {
 				lines = append(lines, "") // Gap between tools and text
 			}
-			lines = append(lines, r.wrapText(msg.TextPreview, r.width-4, "    ")...)
+			lines = append(lines, r.renderMarkdown(msg.TextPreview)...)
 		}
 	}
 
@@ -298,6 +321,112 @@ func (r *Renderer) wrapText(text string, width int, prefix string) []string {
 	}
 
 	return lines
+}
+
+func (r *Renderer) renderMarkdown(text string) []string {
+	if text == "" {
+		return nil
+	}
+
+	var result []string
+	lastEnd := 0
+
+	// Find all code blocks and process them
+	matches := codeBlockRegex.FindAllStringSubmatchIndex(text, -1)
+
+	for _, match := range matches {
+		// Text before this code block
+		if match[0] > lastEnd {
+			before := r.formatInlineMarkdown(text[lastEnd:match[0]])
+			result = append(result, r.wrapText(before, r.width-4, "    ")...)
+		}
+
+		// Extract language and code
+		lang := text[match[2]:match[3]]
+		code := text[match[4]:match[5]]
+
+		// Highlight the code block
+		result = append(result, r.highlightCode(lang, code)...)
+		lastEnd = match[1]
+	}
+
+	// Text after last code block
+	if lastEnd < len(text) {
+		after := r.formatInlineMarkdown(text[lastEnd:])
+		result = append(result, r.wrapText(after, r.width-4, "    ")...)
+	}
+
+	// If no code blocks found, just wrap the text with inline formatting
+	if len(matches) == 0 {
+		return r.wrapText(r.formatInlineMarkdown(text), r.width-4, "    ")
+	}
+
+	return result
+}
+
+func (r *Renderer) highlightCode(lang, code string) []string {
+	// Get lexer for language
+	lexer := lexers.Get(lang)
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
+	lexer = chroma.Coalesce(lexer)
+
+	// Tokenize
+	iterator, err := lexer.Tokenise(nil, code)
+	if err != nil {
+		// Fallback to plain code
+		return r.formatCodeBlock(code)
+	}
+
+	// Format with ANSI colors
+	var buf strings.Builder
+	err = r.formatter.Format(&buf, r.style, iterator)
+	if err != nil {
+		return r.formatCodeBlock(code)
+	}
+
+	return r.formatCodeBlock(buf.String())
+}
+
+func (r *Renderer) formatCodeBlock(code string) []string {
+	var lines []string
+	lines = append(lines, "    \033[90m```\033[0m")
+	for _, line := range strings.Split(strings.TrimRight(code, "\n"), "\n") {
+		lines = append(lines, "    "+line)
+	}
+	lines = append(lines, "    \033[90m```\033[0m")
+	return lines
+}
+
+// formatInlineMarkdown applies ANSI formatting for inline markdown
+func (r *Renderer) formatInlineMarkdown(text string) string {
+	// Bold: **text** -> bold
+	text = boldRegex.ReplaceAllString(text, "\033[1m$1\033[0m")
+
+	// Inline code: `code` -> cyan
+	text = inlineCodeRegex.ReplaceAllString(text, "\033[36m$1\033[0m")
+
+	// Italic: *text* -> italic (must be after bold to avoid conflicts)
+	// Using a more careful replacement to avoid matching inside bold
+	text = italicRegex.ReplaceAllStringFunc(text, func(match string) string {
+		// Extract just the italic part, preserving surrounding chars
+		inner := italicRegex.FindStringSubmatch(match)
+		if len(inner) > 1 {
+			prefix := ""
+			suffix := ""
+			if len(match) > 0 && match[0] != '*' {
+				prefix = string(match[0])
+			}
+			if len(match) > 0 && match[len(match)-1] != '*' {
+				suffix = string(match[len(match)-1])
+			}
+			return prefix + "\033[3m" + inner[1] + "\033[0m" + suffix
+		}
+		return match
+	})
+
+	return text
 }
 
 func (r *Renderer) centerText(text string, width int) string {
