@@ -216,6 +216,13 @@ func (a *StructuredApp) loadSession(name string) {
 
 	// Create the view
 	view := claude.NewView(name, width, height)
+
+	// Initialize transcript from event file to load chat history
+	if transcriptPath := claude.GetLatestTranscriptPath(name); transcriptPath != "" {
+		view.InitTranscript(transcriptPath)
+		view.PollTranscript() // Load existing messages
+	}
+
 	a.views[name] = view
 
 	// Clear existing sessions and add just this one (single session mode for sidebar)

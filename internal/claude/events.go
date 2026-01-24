@@ -242,3 +242,31 @@ func EventsDir() string {
 	}
 	return filepath.Join(tmpdir, "cmux", "events")
 }
+
+// GetLatestTranscriptPath reads the event file and returns the most recent transcript path.
+func GetLatestTranscriptPath(tmuxSession string) string {
+	eventFile := filepath.Join(EventsDir(), tmuxSession+".jsonl")
+
+	file, err := os.Open(eventFile)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, 16*1024*1024)
+
+	var latestPath string
+	for scanner.Scan() {
+		var event HookEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			continue
+		}
+		if event.TranscriptPath != "" {
+			latestPath = event.TranscriptPath
+		}
+	}
+
+	return latestPath
+}

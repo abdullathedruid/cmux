@@ -110,6 +110,21 @@ func (v *View) SetCwdFilter(cwd string) {
 	v.mu.Unlock()
 }
 
+// InitTranscript initializes the transcript reader from a path.
+// This loads existing messages from the transcript file.
+func (v *View) InitTranscript(transcriptPath string) {
+	if transcriptPath == "" {
+		return
+	}
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	v.session.TranscriptPath = transcriptPath
+	v.transcript = NewTranscriptReader(transcriptPath)
+	v.dirty = true
+}
+
 // UpdateFromHookEvent updates the view from a hook event.
 func (v *View) UpdateFromHookEvent(event HookEvent) {
 	v.mu.Lock()
