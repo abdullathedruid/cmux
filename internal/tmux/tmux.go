@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -23,6 +24,8 @@ type Session struct {
 type Client interface {
 	// ListSessions returns all cmux-managed tmux sessions.
 	ListSessions() ([]Session, error)
+	// DiscoverClaudeSessions returns tmux sessions that have Claude Code running.
+	DiscoverClaudeSessions() ([]Session, error)
 	// CreateSession creates a new tmux session with the given name in the specified directory.
 	CreateSession(name, dir string, runClaude bool) error
 	// AttachSession attaches to the specified session.
@@ -81,6 +84,33 @@ func (c *RealClient) ListSessions() ([]Session, error) {
 	}
 
 	return parseSessions(stdout.String()), nil
+}
+
+// DiscoverClaudeSessions returns tmux sessions that have Claude Code running.
+// Detection: checks if session has event file in $TMPDIR/cmux/events/{session}.jsonl
+func (c *RealClient) DiscoverClaudeSessions() ([]Session, error) {
+	allSessions, err := c.ListSessions()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get events directory
+	tmpdir := os.Getenv("TMPDIR")
+	if tmpdir == "" {
+		tmpdir = "/tmp"
+	}
+	eventsDir := filepath.Join(tmpdir, "cmux", "events")
+
+	var claudeSessions []Session
+	for _, session := range allSessions {
+		// Check if event file exists for this session
+		eventFile := filepath.Join(eventsDir, session.Name+".jsonl")
+		if _, err := os.Stat(eventFile); err == nil {
+			claudeSessions = append(claudeSessions, session)
+		}
+	}
+
+	return claudeSessions, nil
 }
 
 // parseSessions parses tmux list-sessions output.

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/abdullathedruid/cmux/internal/input"
 	"github.com/abdullathedruid/cmux/internal/pane"
 	"github.com/abdullathedruid/cmux/internal/terminal"
+	"github.com/abdullathedruid/cmux/internal/tmux"
 	"github.com/abdullathedruid/cmux/internal/ui"
 	"github.com/jesseduffield/gocui"
 )
@@ -47,6 +49,13 @@ type StructuredApp struct {
 	// Terminal modal state
 	terminalCtrl *terminal.ControlMode
 	terminalTerm *pane.SafeTerminal
+
+	// Sidebar state
+	sidebarEnabled     bool
+	availableSessions  []string // All discovered Claude sessions
+	sidebarSelectedIdx int      // Cursor in sidebar
+	tmuxClient         *tmux.RealClient
+	inputPurpose       string // "new_session" when creating a new session
 }
 
 // NewStructuredApp creates a new structured view application.
@@ -86,6 +95,7 @@ func NewStructuredAppWithConfig(cfg *config.Config) (*StructuredApp, error) {
 		views:        make(map[string]*claude.View),
 		sessions:     make([]string, 0),
 		eventWatcher: watcher,
+		tmuxClient:   tmux.NewClient(cfg.ClaudeCommand),
 	}, nil
 }
 
@@ -122,6 +132,95 @@ func (a *StructuredApp) InitSessions(sessions []string) error {
 	})
 
 	return nil
+}
+
+// InitWithDiscovery initializes the app in discovery mode with sidebar.
+func (a *StructuredApp) InitWithDiscovery() error {
+	a.sidebarEnabled = true
+
+	// Discover existing Claude sessions
+	if err := a.refreshAvailableSessions(); err != nil {
+		return err
+	}
+
+	// Load first session if any exist
+	if len(a.availableSessions) > 0 {
+		a.loadSession(a.availableSessions[0])
+	}
+
+	// Wire up event callbacks for dynamic session discovery
+	a.eventWatcher.OnEvent(func(tmuxSession string, event claude.HookEvent) {
+		if view, ok := a.views[tmuxSession]; ok {
+			view.UpdateFromHookEvent(event)
+			a.gui.Update(func(g *gocui.Gui) error { return nil })
+		}
+	})
+
+	return nil
+}
+
+// refreshAvailableSessions rescans for Claude sessions.
+func (a *StructuredApp) refreshAvailableSessions() error {
+	sessions, err := a.tmuxClient.DiscoverClaudeSessions()
+	if err != nil {
+		return err
+	}
+
+	// Extract session names and sort them
+	names := make([]string, 0, len(sessions))
+	for _, s := range sessions {
+		names = append(names, s.Name)
+	}
+	sort.Strings(names)
+
+	a.availableSessions = names
+
+	// Adjust selection if needed
+	if a.sidebarSelectedIdx >= len(a.availableSessions) {
+		if len(a.availableSessions) > 0 {
+			a.sidebarSelectedIdx = len(a.availableSessions) - 1
+		} else {
+			a.sidebarSelectedIdx = 0
+		}
+	}
+
+	return nil
+}
+
+// loadSession loads a session into the main view area.
+func (a *StructuredApp) loadSession(name string) {
+	// Check if already loaded
+	if _, ok := a.views[name]; ok {
+		// Already loaded, just make it active
+		for i, s := range a.sessions {
+			if s == name {
+				a.activeIdx = i
+				return
+			}
+		}
+	}
+
+	// Calculate view dimensions
+	maxX, maxY := a.gui.Size()
+	paneMaxY := maxY - pane.StatusBarHeight
+
+	var width, height int
+	if a.sidebarEnabled {
+		sidebarLayout := pane.CalculateSidebarLayout(maxX, paneMaxY)
+		width = sidebarLayout.Main.Width()
+		height = sidebarLayout.Main.Height()
+	} else {
+		width = maxX - 2
+		height = paneMaxY - 2
+	}
+
+	// Create the view
+	view := claude.NewView(name, width, height)
+	a.views[name] = view
+
+	// Clear existing sessions and add just this one (single session mode for sidebar)
+	a.sessions = []string{name}
+	a.activeIdx = 0
 }
 
 // Run starts the main event loop.
@@ -189,6 +288,11 @@ func (a *StructuredApp) layout(g *gocui.Gui) error {
 
 	// Reserve 1 visible row for status bar
 	paneMaxY := maxY - pane.StatusBarHeight
+
+	// Handle sidebar layout
+	if a.sidebarEnabled {
+		return a.layoutWithSidebar(g, maxX, paneMaxY, currentMode)
+	}
 
 	// Recalculate layouts if size or session count changed
 	var layouts []pane.Layout
@@ -334,6 +438,192 @@ func (a *StructuredApp) layout(g *gocui.Gui) error {
 	return nil
 }
 
+// layoutWithSidebar renders the sidebar and main area.
+func (a *StructuredApp) layoutWithSidebar(g *gocui.Gui, maxX, paneMaxY int, currentMode input.Mode) error {
+	maxY := paneMaxY + pane.StatusBarHeight
+	sidebarLayout := pane.CalculateSidebarLayout(maxX, paneMaxY)
+
+	// Render sidebar
+	sidebarView, err := g.SetView("sidebar", sidebarLayout.Sidebar.X0, sidebarLayout.Sidebar.Y0,
+		sidebarLayout.Sidebar.X1, sidebarLayout.Sidebar.Y1, 0)
+	if err != nil {
+		if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
+			return err
+		}
+	}
+	a.renderSidebar(sidebarView)
+
+	// Render main session view if we have a session loaded
+	if len(a.sessions) > 0 && a.activeIdx < len(a.sessions) {
+		session := a.sessions[a.activeIdx]
+		view := a.views[session]
+
+		// Handle resize
+		width := sidebarLayout.Main.Width()
+		height := sidebarLayout.Main.Height()
+		view.Resize(width, height)
+
+		mainView, err := g.SetView("main-view", sidebarLayout.Main.X0, sidebarLayout.Main.Y0,
+			sidebarLayout.Main.X1, sidebarLayout.Main.Y1, 0)
+		if err != nil {
+			if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
+				return err
+			}
+		}
+
+		a.configureStructuredView(mainView, session, true, currentMode)
+		mainView.Clear()
+		fmt.Fprint(mainView, view.Render())
+	} else {
+		// No session loaded, show empty main view
+		mainView, err := g.SetView("main-view", sidebarLayout.Main.X0, sidebarLayout.Main.Y0,
+			sidebarLayout.Main.X1, sidebarLayout.Main.Y1, 0)
+		if err != nil {
+			if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
+				return err
+			}
+		}
+		mainView.Title = " No Session "
+		mainView.FrameColor = gocui.ColorDefault
+		mainView.TitleColor = gocui.ColorDefault
+		mainView.Clear()
+		fmt.Fprint(mainView, "\n  Press 'n' to create a new session\n  or select an existing session from the sidebar")
+	}
+
+	// Render status bar at the bottom
+	statusBarView, err := g.SetView("status-bar", 0, maxY-pane.StatusBarHeight, maxX-1, maxY, 0)
+	if err != nil {
+		if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
+			return err
+		}
+	}
+	a.configureStatusBar(statusBarView, currentMode)
+
+	// Handle terminal modal (same as non-sidebar mode)
+	if currentMode.IsTerminal() && a.terminalCtrl != nil && a.terminalTerm != nil {
+		width := maxX * 80 / 100
+		height := maxY * 80 / 100
+		if width < 40 {
+			width = 40
+		}
+		if height < 10 {
+			height = 10
+		}
+
+		x0, y0, x1, y1 := ui.ModalDimensions(maxX, maxY, width, height)
+		v, err := g.SetView("terminal-modal", x0, y0, x1, y1, 0)
+		if err != nil {
+			if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
+				return err
+			}
+		}
+
+		session := a.ActiveSession()
+		v.Title = fmt.Sprintf(" %s [Ctrl+Q to exit] ", session)
+		v.Frame = true
+		v.FrameRunes = []rune{'━', '┃', '┏', '┓', '┗', '┛'}
+		v.FrameColor = gocui.ColorGreen
+		v.TitleColor = gocui.ColorGreen
+		v.Wrap = false
+		v.Editable = true
+		v.Editor = gocui.EditorFunc(a.makeTerminalModalEditor())
+
+		modalWidth := width - 2
+		modalHeight := height - 2
+		a.terminalTerm.Resize(modalHeight, modalWidth)
+		a.terminalCtrl.Resize(modalWidth, modalHeight)
+
+		v.Clear()
+		ui.RenderTerminal(v, a.terminalTerm)
+
+		if _, err := g.SetCurrentView("terminal-modal"); err != nil {
+			return err
+		}
+
+		if a.terminalTerm.CursorVisible() {
+			cx, cy := a.terminalTerm.Cursor()
+			v.SetCursor(cx, cy)
+			g.Cursor = true
+		} else {
+			g.Cursor = false
+		}
+	} else {
+		g.DeleteView("terminal-modal")
+
+		if currentMode.IsInput() {
+			inputBuffer := a.input.InputBuffer()
+			x0, y0, x1, y1 := ui.ModalDimensions(maxX, maxY, 50, 3)
+			v, err := g.SetView("input-modal", x0, y0, x1, y1, 0)
+			if err != nil {
+				if !errors.Is(err, gocui.ErrUnknownView) && err.Error() != "unknown view" {
+					return err
+				}
+			}
+
+			// Custom input modal for session creation
+			v.Title = " New Session (Enter=confirm, Esc=cancel) "
+			v.Frame = true
+			v.FrameRunes = []rune{'━', '┃', '┏', '┓', '┗', '┛'}
+			v.FrameColor = gocui.ColorYellow
+			v.Editable = true
+			v.Clear()
+			fmt.Fprintf(v, " %s", inputBuffer)
+			v.Editor = gocui.EditorFunc(a.makeInputEditor())
+
+			if _, err := g.SetCurrentView("input-modal"); err != nil {
+				return err
+			}
+			g.Cursor = true
+			v.SetCursor(len(inputBuffer)+1, 0)
+		} else {
+			g.DeleteView("input-modal")
+			g.SetCurrentView("sidebar")
+			g.Cursor = false
+		}
+	}
+
+	return nil
+}
+
+// renderSidebar draws the session list in the sidebar.
+func (a *StructuredApp) renderSidebar(v *gocui.View) {
+	v.Title = " Sessions "
+	v.Frame = true
+	v.FrameColor = gocui.ColorDefault
+	v.TitleColor = gocui.ColorDefault
+	v.Clear()
+
+	if len(a.availableSessions) == 0 {
+		fmt.Fprint(v, "\n  No Claude sessions\n  found.\n\n  Press 'n' to\n  create one.")
+		return
+	}
+
+	for i, session := range a.availableSessions {
+		prefix := "  "
+		if i == a.sidebarSelectedIdx {
+			prefix = "> "
+		}
+
+		// Truncate session name if too long
+		displayName := session
+		maxLen := pane.SidebarWidth - 4
+		if len(displayName) > maxLen {
+			displayName = displayName[:maxLen-2] + ".."
+		}
+
+		fmt.Fprintf(v, "%s%s\n", prefix, displayName)
+	}
+
+	// Add footer with hints
+	height := v.InnerHeight()
+	sessionCount := len(a.availableSessions)
+	if height > sessionCount+3 {
+		fmt.Fprint(v, "\n───────────────────────\n")
+		fmt.Fprint(v, " [n] New  [x] Delete\n")
+		fmt.Fprint(v, " [r] Refresh")
+	}
+}
+
 // configureStructuredView configures styling for a structured view pane.
 func (a *StructuredApp) configureStructuredView(v *gocui.View, session string, isActive bool, mode input.Mode) {
 	v.Title = fmt.Sprintf(" %s ", session)
@@ -415,11 +705,22 @@ func (a *StructuredApp) setupKeybindings() error {
 		k := key
 		if err := a.gui.SetKeybinding("", k, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 			if a.input.Mode().IsNormal() {
-				switch k {
-				case 'h', 'k':
-					a.prevSession()
-				case 'j', 'l':
-					a.nextSession()
+				if a.sidebarEnabled {
+					// Sidebar navigation
+					switch k {
+					case 'k':
+						a.sidebarPrev()
+					case 'j':
+						a.sidebarNext()
+					}
+				} else {
+					// Pane navigation (non-sidebar mode)
+					switch k {
+					case 'h', 'k':
+						a.prevSession()
+					case 'j', 'l':
+						a.nextSession()
+					}
 				}
 			} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
 				// Forward to terminal modal
@@ -483,9 +784,25 @@ func (a *StructuredApp) setupKeybindings() error {
 		return err
 	}
 
-	// Enter terminal mode with Enter
+	// Enter terminal mode with Enter (or load session in sidebar mode)
 	if err := a.gui.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsInput() {
+			// Handle input submission
+			inputText := a.input.ConsumeInputBuffer()
+			if a.inputPurpose == "new_session" {
+				a.createNewSession(inputText)
+			}
+			a.inputPurpose = ""
+			return nil
+		}
 		if a.input.Mode().IsNormal() {
+			if a.sidebarEnabled && len(a.availableSessions) > 0 {
+				// Load selected session from sidebar
+				if a.sidebarSelectedIdx < len(a.availableSessions) {
+					a.loadSession(a.availableSessions[a.sidebarSelectedIdx])
+				}
+				return nil
+			}
 			return a.enterTerminalModal()
 		}
 		// In terminal mode, forward Enter to tmux
@@ -565,6 +882,44 @@ func (a *StructuredApp) setupKeybindings() error {
 	if err := a.gui.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
 			a.terminalCtrl.SendKeys("C-c")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Sidebar keybindings
+	// 'n' - Create new session
+	if err := a.gui.SetKeybinding("", 'n', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() && a.sidebarEnabled {
+			a.inputPurpose = "new_session"
+			a.input.EnterInputMode()
+		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendLiteralKeys("n")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// 'r' - Refresh session list
+	if err := a.gui.SetKeybinding("", 'r', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() && a.sidebarEnabled {
+			a.refreshAvailableSessions()
+		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendLiteralKeys("r")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// 'x' - Delete/close selected session
+	if err := a.gui.SetKeybinding("", 'x', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if a.input.Mode().IsNormal() && a.sidebarEnabled {
+			a.deleteSelectedSession()
+		} else if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
+			a.terminalCtrl.SendLiteralKeys("x")
 		}
 		return nil
 	}); err != nil {
@@ -653,6 +1008,85 @@ func (a *StructuredApp) prevSession() {
 		return
 	}
 	a.activeIdx = (a.activeIdx - 1 + len(a.sessions)) % len(a.sessions)
+}
+
+// sidebarNext moves to the next item in the sidebar.
+func (a *StructuredApp) sidebarNext() {
+	if len(a.availableSessions) == 0 {
+		return
+	}
+	a.sidebarSelectedIdx = (a.sidebarSelectedIdx + 1) % len(a.availableSessions)
+}
+
+// sidebarPrev moves to the previous item in the sidebar.
+func (a *StructuredApp) sidebarPrev() {
+	if len(a.availableSessions) == 0 {
+		return
+	}
+	a.sidebarSelectedIdx = (a.sidebarSelectedIdx - 1 + len(a.availableSessions)) % len(a.availableSessions)
+}
+
+// deleteSelectedSession kills the selected session in the sidebar.
+func (a *StructuredApp) deleteSelectedSession() {
+	if len(a.availableSessions) == 0 {
+		return
+	}
+	if a.sidebarSelectedIdx >= len(a.availableSessions) {
+		return
+	}
+
+	sessionName := a.availableSessions[a.sidebarSelectedIdx]
+
+	// Kill the tmux session
+	if err := a.tmuxClient.KillSession(sessionName); err != nil {
+		return // Silently fail
+	}
+
+	// Remove from views if loaded
+	if _, ok := a.views[sessionName]; ok {
+		delete(a.views, sessionName)
+	}
+
+	// Remove from sessions list if it's the current one
+	for i, s := range a.sessions {
+		if s == sessionName {
+			a.sessions = append(a.sessions[:i], a.sessions[i+1:]...)
+			if a.activeIdx >= len(a.sessions) && a.activeIdx > 0 {
+				a.activeIdx--
+			}
+			break
+		}
+	}
+
+	// Refresh the available sessions list
+	a.refreshAvailableSessions()
+}
+
+// createNewSession creates a new tmux session with Claude.
+func (a *StructuredApp) createNewSession(name string) {
+	if name == "" {
+		return
+	}
+
+	// Get current working directory
+	cwd, _ := os.Getwd()
+
+	// Create the tmux session with Claude command
+	if err := a.tmuxClient.CreateSession(name, cwd, true); err != nil {
+		return // Silently fail
+	}
+
+	// Refresh available sessions
+	a.refreshAvailableSessions()
+
+	// Select the new session
+	for i, s := range a.availableSessions {
+		if s == name {
+			a.sidebarSelectedIdx = i
+			a.loadSession(name)
+			break
+		}
+	}
 }
 
 // makeInputEditor creates an editor function for the input modal.

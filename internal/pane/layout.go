@@ -3,9 +3,18 @@ package pane
 // StatusBarHeight is the height reserved for the status bar at the bottom.
 const StatusBarHeight = 2
 
+// SidebarWidth is the width of the sidebar in characters.
+const SidebarWidth = 24
+
 // Layout represents the position and size of a pane in screen coordinates.
 type Layout struct {
 	X0, Y0, X1, Y1 int
+}
+
+// SidebarLayout holds both the sidebar and main area layouts.
+type SidebarLayout struct {
+	Sidebar Layout
+	Main    Layout
 }
 
 // Width returns the interior width (excluding borders).
@@ -89,4 +98,20 @@ func CalculateLayouts(count, maxX, maxY int) []Layout {
 	}
 
 	return layouts
+}
+
+// CalculateSidebarLayout returns layouts for a sidebar on the left and main area on the right.
+func CalculateSidebarLayout(maxX, maxY int) SidebarLayout {
+	sidebarWidth := SidebarWidth
+	if sidebarWidth > maxX/3 {
+		sidebarWidth = maxX / 3
+	}
+	if sidebarWidth < 10 {
+		sidebarWidth = 10
+	}
+
+	return SidebarLayout{
+		Sidebar: Layout{0, 0, sidebarWidth - 1, maxY - 1},
+		Main:    Layout{sidebarWidth, 0, maxX - 1, maxY - 1},
+	}
 }
