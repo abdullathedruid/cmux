@@ -66,8 +66,11 @@ func (r *Renderer) RenderWithScroll(session *Session, scrollOffset int) string {
 		contentHeight = 1
 	}
 
+	// Session is idle means Claude is done - last message is complete
+	isSessionIdle := session.Status == StatusIdle
+
 	// Render messages with scroll offset
-	lines := r.renderMessages(session.Messages, contentHeight, scrollOffset)
+	lines := r.renderMessages(session.Messages, contentHeight, scrollOffset, isSessionIdle)
 
 	// Pad to fill height
 	for i := len(lines); i < contentHeight; i++ {
@@ -97,12 +100,12 @@ func (r *Renderer) renderEmpty() string {
 	return sb.String()
 }
 
-func (r *Renderer) renderMessages(messages []Message, maxLines int, scrollOffset int) []string {
+func (r *Renderer) renderMessages(messages []Message, maxLines int, scrollOffset int, isSessionIdle bool) []string {
 	var allLines []string
 	var prevRole string
 	var prevHadTools bool
 
-	for _, msg := range messages {
+	for i, msg := range messages {
 		// Only show header when role changes (like a chat app grouping)
 		showHeader := msg.Role != prevRole
 
@@ -111,7 +114,10 @@ func (r *Renderer) renderMessages(messages []Message, maxLines int, scrollOffset
 			allLines = append(allLines, "") // Gap before text after tools
 		}
 
-		msgLines := r.renderMessageGrouped(msg, showHeader)
+		// Message is streaming if: it's the last message AND session is not idle
+		isLastMsg := i == len(messages)-1
+		isStreaming := isLastMsg && !isSessionIdle
+		msgLines := r.renderMessageGrouped(msg, showHeader, isStreaming)
 		allLines = append(allLines, msgLines...)
 
 		prevRole = msg.Role
@@ -142,7 +148,7 @@ func (r *Renderer) renderMessages(messages []Message, maxLines int, scrollOffset
 	return allLines[start:end]
 }
 
-func (r *Renderer) renderMessageGrouped(msg Message, showHeader bool) []string {
+func (r *Renderer) renderMessageGrouped(msg Message, showHeader bool, isStreaming bool) []string {
 	var lines []string
 
 	switch msg.Role {
@@ -169,7 +175,14 @@ func (r *Renderer) renderMessageGrouped(msg Message, showHeader bool) []string {
 			if len(msg.ToolCalls) > 0 {
 				lines = append(lines, "") // Gap between tools and text
 			}
-			lines = append(lines, r.renderMarkdown(msg.TextPreview)...)
+			textLines := r.renderMarkdown(msg.TextPreview)
+			// Dim streaming messages (session is still active)
+			if isStreaming {
+				for i, line := range textLines {
+					textLines[i] = "\033[2m" + line + "\033[0m"
+				}
+			}
+			lines = append(lines, textLines...)
 		}
 	}
 
