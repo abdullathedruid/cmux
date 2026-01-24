@@ -52,6 +52,8 @@ type Client interface {
 	GetCurrentSession() string
 	// GetPanePID returns the PID of the shell process running in the pane.
 	GetPanePID(name string) (int, error)
+	// GetSessionWorkingDir returns the current working directory of a session's active pane.
+	GetSessionWorkingDir(name string) (string, error)
 }
 
 // RealClient implements Client using actual tmux commands.
@@ -444,4 +446,18 @@ func (c *RealClient) GetPanePID(name string) (int, error) {
 		return 0, fmt.Errorf("parse pane pid: %w", err)
 	}
 	return pid, nil
+}
+
+// GetSessionWorkingDir returns the current working directory of a session's active pane.
+func (c *RealClient) GetSessionWorkingDir(name string) (string, error) {
+	cmd := exec.Command("tmux", "display-message", "-t", name, "-p", "#{pane_current_path}")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("tmux display-message: %w: %s", err, stderr.String())
+	}
+
+	return strings.TrimSpace(stdout.String()), nil
 }

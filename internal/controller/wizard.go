@@ -21,21 +21,23 @@ const (
 	stepSelectAction
 	stepSelectBranch
 	stepEnterBranchName
+	stepAddRepo
 )
 
 // WizardController manages the session creation wizard.
 type WizardController struct {
-	ctx          *Context
-	visible      bool
-	step         wizardStep
-	recentRepos  []string
-	selectedRepo string
-	branches     []string
-	worktrees    []git.Worktree
-	selected     int
-	inputBuffer  string
-	createNew    bool // true = create new worktree, false = use existing
-	gui          *gocui.Gui
+	ctx           *Context
+	visible       bool
+	step          wizardStep
+	recentRepos   []string
+	selectedRepo  string
+	branches      []string
+	worktrees     []git.Worktree
+	selected      int
+	inputBuffer   string
+	createNew     bool // true = create new worktree, false = use existing
+	gui           *gocui.Gui
+	preSelectedRepo string // If set, skip repo selection step
 }
 
 // Edit handles key input for the wizard modal.
@@ -56,8 +58,8 @@ func (c *WizardController) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui
 	case key == gocui.KeyArrowUp || ch == 'k':
 		c.cursorUp(c.gui, v)
 		return true
-	case ch != 0 && mod == gocui.ModNone && c.step == stepEnterBranchName:
-		// Only accept character input in branch name entry mode
+	case ch != 0 && mod == gocui.ModNone && (c.step == stepEnterBranchName || c.step == stepAddRepo):
+		// Accept character input in text entry modes
 		c.inputBuffer += string(ch)
 		c.Render(c.gui)
 		return true
@@ -89,9 +91,39 @@ func (c *WizardController) Show(g *gocui.Gui) error {
 	c.selectedRepo = ""
 	c.gui = g
 
-	// Gather recent repos from existing sessions
-	c.recentRepos = c.gatherRecentRepos()
+	// If a repo is pre-selected, skip repo selection
+	if c.preSelectedRepo != "" {
+		c.selectedRepo = c.preSelectedRepo
+		c.preSelectedRepo = ""
+		c.step = stepSelectAction
 
+		// Load branches and worktrees
+		worktrees, _ := git.ListWorktrees(c.selectedRepo)
+		c.worktrees = worktrees
+		branches, _ := git.ListBranches(c.selectedRepo)
+		c.branches = branches
+	} else {
+		// Gather recent repos from existing sessions
+		c.recentRepos = c.gatherRecentRepos()
+	}
+
+	return c.Layout(g)
+}
+
+// ShowWithRepo shows the wizard with a pre-selected repository.
+func (c *WizardController) ShowWithRepo(g *gocui.Gui, repoPath string) error {
+	c.preSelectedRepo = repoPath
+	return c.Show(g)
+}
+
+// ShowAddRepo shows the wizard in add-repo mode.
+func (c *WizardController) ShowAddRepo(g *gocui.Gui) error {
+	c.visible = true
+	c.step = stepAddRepo
+	c.selected = 0
+	c.inputBuffer = ""
+	c.selectedRepo = ""
+	c.gui = g
 	return c.Layout(g)
 }
 
@@ -180,6 +212,8 @@ func (c *WizardController) getTitle() string {
 		return " New Session - Select Branch "
 	case stepEnterBranchName:
 		return " New Session - Enter Branch Name "
+	case stepAddRepo:
+		return " Add Repository "
 	default:
 		return " New Session "
 	}
@@ -209,6 +243,8 @@ func (c *WizardController) Render(g *gocui.Gui) error {
 		c.renderBranchSelection(v)
 	case stepEnterBranchName:
 		c.renderBranchInput(v)
+	case stepAddRepo:
+		c.renderAddRepoInput(v)
 	}
 
 	return nil
@@ -331,6 +367,18 @@ func (c *WizardController) renderBranchInput(v *gocui.View) {
 	fmt.Fprintln(v, "  Enter: Create  Esc: Back")
 }
 
+func (c *WizardController) renderAddRepoInput(v *gocui.View) {
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, "  Enter repository path:")
+	fmt.Fprintln(v, "")
+	fmt.Fprintf(v, "  > %s_\n", c.inputBuffer)
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, "  (Use ~ for home directory)")
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, "  ────────────────────────────────────────────")
+	fmt.Fprintln(v, "  Enter: Add  Esc: Cancel")
+}
+
 func (c *WizardController) getBranchItems() []string {
 	var items []string
 
@@ -399,6 +447,8 @@ func (c *WizardController) select_(g *gocui.Gui, v *gocui.View) error {
 		return c.selectBranch(g)
 	case stepEnterBranchName:
 		return c.createWithNewBranch(g)
+	case stepAddRepo:
+		return c.addRepository(g)
 	}
 	return nil
 }
@@ -562,6 +612,8 @@ func (c *WizardController) back(g *gocui.Gui, v *gocui.View) error {
 		c.step = stepSelectAction
 		c.selected = 0
 		c.inputBuffer = ""
+	case stepAddRepo:
+		return c.Hide(g)
 	}
 
 	v.Title = c.getTitle()
@@ -569,11 +621,37 @@ func (c *WizardController) back(g *gocui.Gui, v *gocui.View) error {
 }
 
 func (c *WizardController) backspace(g *gocui.Gui, v *gocui.View) error {
-	if c.step == stepEnterBranchName && len(c.inputBuffer) > 0 {
+	if (c.step == stepEnterBranchName || c.step == stepAddRepo) && len(c.inputBuffer) > 0 {
 		c.inputBuffer = c.inputBuffer[:len(c.inputBuffer)-1]
 		return c.Render(g)
 	}
 	return nil
+}
+
+func (c *WizardController) addRepository(g *gocui.Gui) error {
+	if c.inputBuffer == "" {
+		return nil
+	}
+
+	path := c.inputBuffer
+
+	// Validate it's a git repo
+	if _, err := git.FindRepoRoot(path); err != nil {
+		// TODO: Show error message in UI
+		return nil
+	}
+
+	// Add to config
+	if err := c.ctx.Config.AddRepository(path); err != nil {
+		return err
+	}
+
+	// Refresh and close
+	if c.ctx.OnRefresh != nil {
+		c.ctx.OnRefresh()
+	}
+
+	return c.Hide(g)
 }
 
 func sanitizeBranchForSession(branch string) string {

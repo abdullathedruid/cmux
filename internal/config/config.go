@@ -4,6 +4,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -381,4 +382,88 @@ func expandPath(path string) string {
 		return filepath.Join(home, path[1:])
 	}
 	return path
+}
+
+// Save writes the current configuration to the config file.
+func (c *Config) Save() error {
+	// Ensure data directory exists
+	if err := c.EnsureDataDir(); err != nil {
+		return err
+	}
+
+	// Create a config struct for YAML output (exclude DataDir which is computed)
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(c.ConfigFile(), data, 0644)
+}
+
+// AddRepository adds a repository path to the config and saves it.
+// The path is validated to ensure it's a valid git repository.
+func (c *Config) AddRepository(path string) error {
+	// Expand and clean the path
+	expanded := expandPath(path)
+	absPath, err := filepath.Abs(expanded)
+	if err != nil {
+		return err
+	}
+
+	// Check if already exists
+	for _, repo := range c.Repositories {
+		existingExpanded := expandPath(repo)
+		existingAbs, _ := filepath.Abs(existingExpanded)
+		if existingAbs == absPath {
+			return nil // Already exists, no-op
+		}
+	}
+
+	// Store with ~ prefix if in home directory for cleaner config
+	home, _ := os.UserHomeDir()
+	storePath := absPath
+	if home != "" && strings.HasPrefix(absPath, home) {
+		storePath = "~" + absPath[len(home):]
+	}
+
+	c.Repositories = append(c.Repositories, storePath)
+	return c.Save()
+}
+
+// RemoveRepository removes a repository path from the config and saves it.
+func (c *Config) RemoveRepository(path string) error {
+	// Expand and clean the path for comparison
+	expanded := expandPath(path)
+	absPath, _ := filepath.Abs(expanded)
+
+	var filtered []string
+	for _, repo := range c.Repositories {
+		repoExpanded := expandPath(repo)
+		repoAbs, _ := filepath.Abs(repoExpanded)
+		if repoAbs != absPath {
+			filtered = append(filtered, repo)
+		}
+	}
+
+	if len(filtered) == len(c.Repositories) {
+		return nil // Not found, no-op
+	}
+
+	c.Repositories = filtered
+	return c.Save()
+}
+
+// HasRepository checks if a repository path is in the config.
+func (c *Config) HasRepository(path string) bool {
+	expanded := expandPath(path)
+	absPath, _ := filepath.Abs(expanded)
+
+	for _, repo := range c.Repositories {
+		repoExpanded := expandPath(repo)
+		repoAbs, _ := filepath.Abs(repoExpanded)
+		if repoAbs == absPath {
+			return true
+		}
+	}
+	return false
 }

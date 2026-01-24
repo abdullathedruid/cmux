@@ -14,8 +14,10 @@ import (
 
 	"github.com/abdullathedruid/cmux/internal/claude"
 	"github.com/abdullathedruid/cmux/internal/config"
+	"github.com/abdullathedruid/cmux/internal/discovery"
 	"github.com/abdullathedruid/cmux/internal/input"
 	"github.com/abdullathedruid/cmux/internal/pane"
+	"github.com/abdullathedruid/cmux/internal/session"
 	"github.com/abdullathedruid/cmux/internal/terminal"
 	"github.com/abdullathedruid/cmux/internal/tmux"
 	"github.com/abdullathedruid/cmux/internal/ui"
@@ -56,6 +58,10 @@ type StructuredApp struct {
 	sidebarSelectedIdx int      // Cursor in sidebar
 	tmuxClient         *tmux.RealClient
 	inputPurpose       string // "new_session" when creating a new session
+
+	// Advanced session management
+	discoveryService *discovery.Service
+	sessionManager   *session.Manager
 }
 
 // NewStructuredApp creates a new structured view application.
@@ -88,14 +94,18 @@ func NewStructuredAppWithConfig(cfg *config.Config) (*StructuredApp, error) {
 		return nil, fmt.Errorf("creating event watcher: %w", err)
 	}
 
+	tmuxClient := tmux.NewClient(cfg.ClaudeCommand)
+
 	return &StructuredApp{
-		gui:          g,
-		config:       cfg,
-		input:        input.NewHandler(),
-		views:        make(map[string]*claude.View),
-		sessions:     make([]string, 0),
-		eventWatcher: watcher,
-		tmuxClient:   tmux.NewClient(cfg.ClaudeCommand),
+		gui:              g,
+		config:           cfg,
+		input:            input.NewHandler(),
+		views:            make(map[string]*claude.View),
+		sessions:         make([]string, 0),
+		eventWatcher:     watcher,
+		tmuxClient:       tmuxClient,
+		discoveryService: discovery.NewService(tmuxClient, cfg),
+		sessionManager:   session.NewManager(tmuxClient, cfg),
 	}, nil
 }
 
@@ -1140,6 +1150,21 @@ func (a *StructuredApp) ActiveView() *claude.View {
 		return nil
 	}
 	return a.views[session]
+}
+
+// DiscoveryService returns the discovery service for external use.
+func (a *StructuredApp) DiscoveryService() *discovery.Service {
+	return a.discoveryService
+}
+
+// SessionManager returns the session manager for external use.
+func (a *StructuredApp) SessionManager() *session.Manager {
+	return a.sessionManager
+}
+
+// Config returns the config for external use.
+func (a *StructuredApp) Config() *config.Config {
+	return a.config
 }
 
 // scrollActiveView scrolls the active view up or down by half a page.
