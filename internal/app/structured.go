@@ -1017,20 +1017,22 @@ func (a *StructuredApp) prevSession() {
 	a.activeIdx = (a.activeIdx - 1 + len(a.sessions)) % len(a.sessions)
 }
 
-// sidebarNext moves to the next item in the sidebar.
+// sidebarNext moves to the next item in the sidebar and loads it.
 func (a *StructuredApp) sidebarNext() {
 	if len(a.availableSessions) == 0 {
 		return
 	}
 	a.sidebarSelectedIdx = (a.sidebarSelectedIdx + 1) % len(a.availableSessions)
+	a.loadSession(a.availableSessions[a.sidebarSelectedIdx])
 }
 
-// sidebarPrev moves to the previous item in the sidebar.
+// sidebarPrev moves to the previous item in the sidebar and loads it.
 func (a *StructuredApp) sidebarPrev() {
 	if len(a.availableSessions) == 0 {
 		return
 	}
 	a.sidebarSelectedIdx = (a.sidebarSelectedIdx - 1 + len(a.availableSessions)) % len(a.availableSessions)
+	a.loadSession(a.availableSessions[a.sidebarSelectedIdx])
 }
 
 // deleteSelectedSession kills the selected session in the sidebar.
