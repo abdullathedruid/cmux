@@ -1,8 +1,9 @@
-// Package status reads Claude session status from hook-written files
+// Package status reads Claude session status from hook-written event files
 // and enriches it with data from JSONL transcripts.
 package status
 
 import (
+	"bufio"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,19 +12,19 @@ import (
 	"github.com/abdullathedruid/cmux/internal/transcript"
 )
 
-// StatusDir returns the directory where status files are stored.
-func StatusDir() string {
+// EventsDir returns the directory where hook event files are stored.
+func EventsDir() string {
 	tmpDir := os.TempDir()
-	return filepath.Join(tmpDir, "cmux", "sessions")
+	return filepath.Join(tmpDir, "cmux", "events")
 }
 
-// HookStatus represents the minimal status written by the hook script.
-type HookStatus struct {
-	Status         string `json:"status"`
-	Tool           string `json:"tool,omitempty"`
+// HookEvent represents an event written by the hook script to the JSONL file.
+type HookEvent struct {
+	HookEventName  string `json:"hook_event_name"`
+	ToolName       string `json:"tool_name,omitempty"`
 	TranscriptPath string `json:"transcript_path,omitempty"`
 	SessionID      string `json:"session_id,omitempty"`
-	TS             int64  `json:"ts"`
+	TS             string `json:"ts"` // ISO8601 timestamp
 }
 
 // ToolHistoryEntry represents a single tool execution in the history.
@@ -66,48 +67,58 @@ func ReadFullStatus(sessionName string) SessionStatus {
 
 // ReadFullStatusWithHistory reads complete status with configurable history depth.
 func ReadFullStatusWithHistory(sessionName string, maxHistory int) SessionStatus {
-	statusFile := filepath.Join(StatusDir(), sessionName+".status")
+	eventsFile := filepath.Join(EventsDir(), sessionName+".jsonl")
 
 	result := SessionStatus{
 		Status: "idle",
 		Found:  false,
 	}
 
-	// Read hook status file
-	data, err := os.ReadFile(statusFile)
+	// Read the last event from the JSONL file
+	event, err := readLastEvent(eventsFile)
 	if err != nil {
 		return result
 	}
 
-	var hs HookStatus
-	if err := json.Unmarshal(data, &hs); err != nil {
-		return result
+	result.Found = true
+	result.SessionID = event.SessionID
+	result.TranscriptPath = event.TranscriptPath
+
+	// Parse timestamp
+	if event.TS != "" {
+		if t, err := time.Parse(time.RFC3339, event.TS); err == nil {
+			result.LastActive = t
+		}
 	}
 
-	result.Found = true
-	result.Status = hs.Status
-	result.Tool = hs.Tool
-	result.SessionID = hs.SessionID
-	result.TranscriptPath = hs.TranscriptPath
-
-	// Convert timestamp to time.Time
-	if hs.TS > 0 {
-		result.LastActive = time.Unix(hs.TS, 0)
+	// Map hook event to status
+	switch event.HookEventName {
+	case "PreToolUse":
+		result.Status = "tool"
+		result.Tool = event.ToolName
+	case "PostToolUse", "UserPromptSubmit":
+		result.Status = "active"
+	case "Stop", "SubagentStop":
+		result.Status = "stopped"
+	case "Notification", "PermissionRequest":
+		result.Status = "needs_input"
+	default:
+		result.Status = "active"
 	}
 
 	// Check if status is stale (older than 30 seconds = probably not running)
 	// Exception: "needs_input" and "stopped" should persist until user actually intervenes
-	if hs.TS > 0 && hs.Status != "needs_input" && hs.Status != "stopped" {
-		age := time.Now().Unix() - hs.TS
-		if age > 30 {
+	if !result.LastActive.IsZero() && result.Status != "needs_input" && result.Status != "stopped" {
+		age := time.Since(result.LastActive)
+		if age > 30*time.Second {
 			result.Status = "idle"
 			result.Tool = ""
 		}
 	}
 
 	// Read transcript for historical data
-	if hs.TranscriptPath != "" && maxHistory > 0 {
-		if ts, err := transcript.ReadTranscript(hs.TranscriptPath, maxHistory); err == nil && ts != nil {
+	if result.TranscriptPath != "" && maxHistory > 0 {
+		if ts, err := transcript.ReadTranscript(result.TranscriptPath, maxHistory); err == nil && ts != nil {
 			// Convert tool history
 			result.ToolHistory = make([]ToolHistoryEntry, len(ts.ToolHistory))
 			for i, tc := range ts.ToolHistory {
@@ -143,12 +154,44 @@ func ReadFullStatusWithHistory(sessionName string, maxHistory int) SessionStatus
 	return result
 }
 
-// CleanupStatus removes the status file for a session.
+// CleanupStatus removes the events file for a session.
 func CleanupStatus(sessionName string) error {
-	statusFile := filepath.Join(StatusDir(), sessionName+".status")
-	err := os.Remove(statusFile)
+	eventsFile := filepath.Join(EventsDir(), sessionName+".jsonl")
+	err := os.Remove(eventsFile)
 	if os.IsNotExist(err) {
 		return nil
 	}
 	return err
+}
+
+// readLastEvent reads the last line from a JSONL events file and parses it.
+func readLastEvent(path string) (*HookEvent, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var lastLine string
+	scanner := bufio.NewScanner(file)
+	// Increase buffer for potentially large lines
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		lastLine = scanner.Text()
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if lastLine == "" {
+		return nil, os.ErrNotExist
+	}
+
+	var event HookEvent
+	if err := json.Unmarshal([]byte(lastLine), &event); err != nil {
+		return nil, err
+	}
+
+	return &event, nil
 }
