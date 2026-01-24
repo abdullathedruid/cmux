@@ -111,7 +111,7 @@ func (r *Renderer) renderMessageGrouped(msg Message, showHeader bool) []string {
 	case "assistant":
 		if showHeader {
 			lines = append(lines, "") // Blank line before new group
-			lines = append(lines, r.styleAssistantHeader(msg.Timestamp, msg.IsComplete))
+			lines = append(lines, r.styleAssistantHeader(msg.Timestamp))
 		}
 
 		// Tool calls first (they usually precede text in Claude's responses)
@@ -136,13 +136,9 @@ func (r *Renderer) styleUserHeader(ts time.Time) string {
 	return fmt.Sprintf("\033[1;34m▶ You\033[0m \033[90m%s\033[0m", timeStr)
 }
 
-func (r *Renderer) styleAssistantHeader(ts time.Time, complete bool) string {
+func (r *Renderer) styleAssistantHeader(ts time.Time) string {
 	timeStr := ts.Format("15:04:05")
-	status := ""
-	if !complete {
-		status = " \033[33m(streaming...)\033[0m"
-	}
-	return fmt.Sprintf("\033[1;32m◀ Claude\033[0m \033[90m%s\033[0m%s", timeStr, status)
+	return fmt.Sprintf("\033[1;32m◀ Claude\033[0m \033[90m%s\033[0m", timeStr)
 }
 
 func (r *Renderer) renderToolCall(tool ToolCall) string {
