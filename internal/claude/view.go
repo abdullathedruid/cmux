@@ -117,19 +117,20 @@ func (v *View) UpdateFromHookEvent(event HookEvent) {
 		return // Ignore events from different projects
 	}
 
-	// Once we have a session ID, only accept events from that same Claude session
-	// This prevents mixing events from different Claude instances in the same tmux pane
-	if v.session.ID != "" && event.SessionID != "" && v.session.ID != event.SessionID {
-		return // Ignore events from different Claude sessions
-	}
-
+	// Track the Claude session ID but don't filter by it - we want to see
+	// all activity in this tmux session. When the transcript path changes
+	// (new Claude session), we'll switch to the new transcript below.
 	v.session.ID = event.SessionID
 	v.session.Cwd = event.Cwd
 	v.session.PermissionMode = event.PermissionMode
 	v.session.LastUpdate = time.Now()
 
 	if event.TranscriptPath != "" && v.session.TranscriptPath != event.TranscriptPath {
+		// New transcript = new Claude session, switch to it
+		// Keep existing messages to preserve history across sessions
 		v.session.TranscriptPath = event.TranscriptPath
+		v.session.CurrentTool = nil
+		v.session.PendingPermission = nil
 		v.transcript = NewTranscriptReader(event.TranscriptPath)
 	}
 

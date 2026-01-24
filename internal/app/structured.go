@@ -279,14 +279,19 @@ func (a *StructuredApp) layout(g *gocui.Gui) error {
 		v.Clear()
 		ui.RenderTerminal(v, a.terminalTerm)
 
-		// Set cursor position
-		cx, cy := a.terminalTerm.Cursor()
-		v.SetCursor(cx, cy)
-
 		if _, err := g.SetCurrentView("terminal-modal"); err != nil {
 			return err
 		}
-		g.Cursor = true
+
+		// Only show cursor if the terminal wants it visible
+		// Apps like Claude hide the cursor while working
+		if a.terminalTerm.CursorVisible() {
+			cx, cy := a.terminalTerm.Cursor()
+			v.SetCursor(cx, cy)
+			g.Cursor = true
+		} else {
+			g.Cursor = false
+		}
 	} else {
 		g.DeleteView("terminal-modal")
 
@@ -535,15 +540,23 @@ func (a *StructuredApp) setupKeybindings() error {
 
 // setupTerminalModalPassthrough sets up keybindings to pass keys to the terminal modal.
 func (a *StructuredApp) setupTerminalModalPassthrough() error {
-	// Backspace
-	if err := a.gui.SetKeybinding("", gocui.KeyBackspace2, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+	// Backspace handler - shared by both key codes
+	handleBackspace := func(g *gocui.Gui, v *gocui.View) error {
 		if a.input.Mode().IsTerminal() && a.terminalCtrl != nil {
 			a.terminalCtrl.SendKeys("BSpace")
 		} else if a.input.Mode().IsInput() {
 			a.input.BackspaceInputBuffer()
 		}
 		return nil
-	}); err != nil {
+	}
+
+	// KeyBackspace2 is Ctrl+H (0x08)
+	if err := a.gui.SetKeybinding("", gocui.KeyBackspace2, gocui.ModNone, handleBackspace); err != nil {
+		return err
+	}
+
+	// KeyBackspace is DEL (0x7f) - what most terminals send for backspace
+	if err := a.gui.SetKeybinding("", gocui.KeyBackspace, gocui.ModNone, handleBackspace); err != nil {
 		return err
 	}
 

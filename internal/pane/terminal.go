@@ -60,3 +60,11 @@ func (t *SafeTerminal) Dimensions() (rows, cols int) {
 	defer t.mu.Unlock()
 	return t.Height, t.Width
 }
+
+// CursorVisible returns whether the cursor should be visible. Thread-safe.
+// Applications like Claude hide the cursor while working.
+func (t *SafeTerminal) CursorVisible() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.Terminal.CursorVisible
+}
