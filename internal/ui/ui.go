@@ -429,7 +429,7 @@ func RenderStatusBar(sessionCount, attachedCount, activeCount int, isDashboard b
 
 	idleCount := sessionCount - attachedCount - activeCount
 	stats := fmt.Sprintf("%d sessions │ %d attached │ %d active │ %d idle", sessionCount, attachedCount, activeCount, idleCount)
-	help := "hjkl:nav enter:attach p:popup d:diff x:del n:new ?:help v:" + viewName
+	help := "hjkl:nav i:term enter:attach p:popup d:diff x:del n:new r:ref ?:help v:" + viewName
 
 	return stats + "        " + help + "        " + version
 }
@@ -457,9 +457,16 @@ func HelpText() string {
 Navigation
   h/j/k/l or arrows  Navigate between sessions
   Enter              Attach to selected session
+  i                  Enter terminal mode (interact with session)
+  Ctrl+Q             Exit terminal mode (return to normal)
   p                  Open session in popup (tmux 3.2+)
   Tab                Cycle panels (list view)
   1-9                Jump to session by number
+
+Scrolling (Normal Mode)
+  Ctrl+U / Ctrl+D    Scroll up/down half page
+  Ctrl+B / Ctrl+F    Scroll up/down full page
+  G                  Scroll to bottom (latest content)
 
 Session Management
   n                  New session in current directory
@@ -468,8 +475,14 @@ Session Management
   W                  Worktree cleanup
   x                  Delete selected session
   d                  Show git diff in popup (tmux 3.2+)
-  e                  Edit session note (Ctrl+S to save)
+  e                  Edit session note
   r                  Refresh session list
+  R                  Open repository manager
+
+Permission Responses (when session awaits input)
+  1                  Yes (approve once)
+  2                  Always (approve for session)
+  3                  No (deny)
 
 Views
   v                  Toggle dashboard/list view

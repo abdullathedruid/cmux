@@ -172,6 +172,7 @@ func (c *SearchController) Render(g *gocui.Gui) error {
 	}
 
 	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, " j/k or arrows: Navigate")
 	fmt.Fprintln(v, " Enter: Select  Esc: Cancel")
 
 	return nil

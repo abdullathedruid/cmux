@@ -308,8 +308,10 @@ func (c *RepoManagerController) renderRepoList(v *gocui.View) {
 
 	// Footer
 	fmt.Fprint(v, "\n───────────────────\n")
+	fmt.Fprint(v, " [j/k] Navigate\n")
 	fmt.Fprint(v, " [a] Add  [d] Remove\n")
-	fmt.Fprint(v, " [Tab/l] Sessions")
+	fmt.Fprint(v, " [Tab/l] Sessions\n")
+	fmt.Fprint(v, " [q/Esc] Close")
 }
 
 func (c *RepoManagerController) renderSessionList(v *gocui.View) {
@@ -356,8 +358,9 @@ func (c *RepoManagerController) renderSessionList(v *gocui.View) {
 
 	// Footer
 	fmt.Fprint(v, "\n───────────────────────────────────────────\n")
-	fmt.Fprint(v, " [Enter] Attach  [n] New  [x] Delete  [X] Force Delete\n")
-	fmt.Fprint(v, " [Tab/h] Repos   [r] Refresh")
+	fmt.Fprint(v, " [j/k] Navigate  [Enter] Attach\n")
+	fmt.Fprint(v, " [n] New  [x] Delete  [X] Force Delete\n")
+	fmt.Fprint(v, " [Tab/h] Repos  [r] Refresh  [q] Close")
 }
 
 // Keybindings sets up view-specific keybindings.

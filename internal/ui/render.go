@@ -96,9 +96,9 @@ func StatusBarContent(mode input.Mode, paneCount int) string {
 	case input.ModeInput:
 		return " INPUT │ Enter:confirm │ Esc:cancel │ Backspace:delete"
 	default: // ModeNormal
-		hints := " NORMAL │ hjkl/arrows:navigate │ i/Enter:terminal │ N:new worktree │ q:quit"
+		hints := " NORMAL │ hjkl:nav │ i/Enter:terminal │ Ctrl+U/D:scroll │ G:bottom │ N:new │ q:quit"
 		if paneCount > 1 {
-			hints = " NORMAL │ hjkl:nav │ 1-9:pane │ i/Enter:terminal │ N:new │ q:quit"
+			hints = " NORMAL │ hjkl:nav │ 1-9:pane │ i:terminal │ Ctrl+U/D:scroll │ N:new │ q:quit"
 		}
 		return hints
 	}

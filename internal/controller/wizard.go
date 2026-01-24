@@ -270,6 +270,7 @@ func (c *WizardController) renderRepoSelection(v *gocui.View) {
 
 	fmt.Fprintln(v, "")
 	fmt.Fprintln(v, "  ────────────────────────────────────────────")
+	fmt.Fprintln(v, "  j/k or arrows: Navigate")
 	fmt.Fprintln(v, "  Enter: Select  Esc: Cancel")
 }
 
@@ -296,6 +297,7 @@ func (c *WizardController) renderActionSelection(v *gocui.View) {
 
 	fmt.Fprintln(v, "")
 	fmt.Fprintln(v, "  ────────────────────────────────────────────")
+	fmt.Fprintln(v, "  j/k or arrows: Navigate")
 	fmt.Fprintln(v, "  Enter: Select  Esc: Back")
 }
 
@@ -354,6 +356,7 @@ func (c *WizardController) renderBranchSelection(v *gocui.View) {
 
 	fmt.Fprintln(v, "")
 	fmt.Fprintln(v, "  ────────────────────────────────────────────")
+	fmt.Fprintln(v, "  j/k or arrows: Navigate")
 	fmt.Fprintln(v, "  Enter: Select  Esc: Back")
 }
 

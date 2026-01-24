@@ -695,10 +695,17 @@ func (a *StructuredApp) renderSidebar(v *gocui.View) {
 	// Add footer with hints
 	height := v.InnerHeight()
 	sessionCount := len(a.availableSessions)
-	if height > sessionCount+3 {
+	if height > sessionCount+5 {
 		fmt.Fprint(v, "\n───────────────────────\n")
+		fmt.Fprint(v, " [j/k] Navigate\n")
+		fmt.Fprint(v, " [i/Enter] Terminal\n")
 		fmt.Fprint(v, " [n] New  [x] Delete\n")
-		fmt.Fprint(v, " [r] Refresh")
+		fmt.Fprint(v, " [r] Refresh [R] Repos\n")
+		fmt.Fprint(v, " [Ctrl+U/D] Scroll")
+	} else if height > sessionCount+3 {
+		fmt.Fprint(v, "\n───────────────────────\n")
+		fmt.Fprint(v, " j/k:nav i:term n:new\n")
+		fmt.Fprint(v, " x:del r:ref R:repos")
 	}
 }
 
