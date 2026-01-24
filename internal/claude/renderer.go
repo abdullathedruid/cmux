@@ -72,14 +72,22 @@ func (r *Renderer) renderEmpty() string {
 func (r *Renderer) renderMessages(messages []Message, maxLines int) []string {
 	var allLines []string
 	var prevRole string
+	var prevHadTools bool
 
 	for _, msg := range messages {
 		// Only show header when role changes (like a chat app grouping)
 		showHeader := msg.Role != prevRole
+
+		// Add gap between tool-only and text messages in same assistant group
+		if !showHeader && msg.Role == "assistant" && prevHadTools && msg.TextPreview != "" && len(msg.ToolCalls) == 0 {
+			allLines = append(allLines, "") // Gap before text after tools
+		}
+
 		msgLines := r.renderMessageGrouped(msg, showHeader)
 		allLines = append(allLines, msgLines...)
 
 		prevRole = msg.Role
+		prevHadTools = len(msg.ToolCalls) > 0
 	}
 
 	// Return only the last maxLines
@@ -106,14 +114,17 @@ func (r *Renderer) renderMessageGrouped(msg Message, showHeader bool) []string {
 			lines = append(lines, r.styleAssistantHeader(msg.Timestamp, msg.IsComplete))
 		}
 
-		// Text content
-		if msg.TextPreview != "" {
-			lines = append(lines, r.wrapText(msg.TextPreview, r.width-4, "    ")...)
-		}
-
-		// Tool calls
+		// Tool calls first (they usually precede text in Claude's responses)
 		for _, tool := range msg.ToolCalls {
 			lines = append(lines, r.renderToolCall(tool))
+		}
+
+		// Text content (with gap after tool calls)
+		if msg.TextPreview != "" {
+			if len(msg.ToolCalls) > 0 {
+				lines = append(lines, "") // Gap between tools and text
+			}
+			lines = append(lines, r.wrapText(msg.TextPreview, r.width-4, "    ")...)
 		}
 	}
 
