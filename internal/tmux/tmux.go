@@ -128,20 +128,38 @@ func (c *RealClient) isRunningClaude(sessionName string) bool {
 		return false
 	}
 
-	// Check the shell's child processes for claude
+	// First check the pane's own command (claude might be the direct process)
+	paneCmd, err := getProcessCommand(pid)
+	if err == nil && strings.Contains(strings.ToLower(paneCmd), "claude") {
+		return true
+	}
+
+	// Then check child processes (claude running under a shell)
 	children, err := getChildProcesses(pid)
 	if err != nil {
 		return false
 	}
 
 	for _, child := range children {
-		cmdLower := strings.ToLower(child)
-		if strings.Contains(cmdLower, "claude") {
+		if strings.Contains(strings.ToLower(child), "claude") {
 			return true
 		}
 	}
 
 	return false
+}
+
+// getProcessCommand returns the command line for a PID.
+func getProcessCommand(pid int) (string, error) {
+	cmd := exec.Command("ps", "-p", fmt.Sprintf("%d", pid), "-o", "args=")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 // getChildProcesses returns command lines of child processes for a PID.
