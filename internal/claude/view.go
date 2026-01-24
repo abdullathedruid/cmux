@@ -202,13 +202,14 @@ func (v *View) PollTranscript() error {
 		return nil
 	}
 
-	newMessages, err := v.transcript.Poll()
+	_, hasChanges, err := v.transcript.Poll()
 	if err != nil {
 		return err
 	}
 
-	if len(newMessages) > 0 {
+	if hasChanges {
 		// Merge with existing messages (transcript reader handles dedup)
+		// hasChanges is true for both new AND updated messages
 		v.session.Messages = v.transcript.Messages()
 		v.dirty = true
 	}

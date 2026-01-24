@@ -30,30 +30,29 @@ func NewTranscriptReader(path string) *TranscriptReader {
 	}
 }
 
-// Poll reads new entries from the transcript. Returns newly added messages.
-func (r *TranscriptReader) Poll() ([]Message, error) {
+// Poll reads new entries from the transcript.
+// Returns newly added messages and whether any messages were modified (new or updated).
+func (r *TranscriptReader) Poll() (newMessages []Message, hasChanges bool, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	file, err := os.Open(r.path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, false, nil
 		}
-		return nil, err
+		return nil, false, err
 	}
 	defer file.Close()
 
 	if _, err := file.Seek(r.offset, 0); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	scanner := bufio.NewScanner(file)
 	// Allow large lines (up to 16MB for tool results)
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, 16*1024*1024)
-
-	var newMessages []Message
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -65,12 +64,16 @@ func (r *TranscriptReader) Poll() ([]Message, error) {
 		}
 
 		msg, isNew := r.parseLine(line)
+		if msg.ID != "" {
+			// Any parsed message (new or updated) counts as a change
+			hasChanges = true
+		}
 		if isNew {
 			newMessages = append(newMessages, msg)
 		}
 	}
 
-	return newMessages, scanner.Err()
+	return newMessages, hasChanges, scanner.Err()
 }
 
 // Messages returns all parsed messages.
